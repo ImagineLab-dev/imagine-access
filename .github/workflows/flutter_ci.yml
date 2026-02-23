@@ -1,0 +1,196 @@
+name: Flutter CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  FLUTTER_VERSION: '3.19.0'
+
+jobs:
+  # ==========================================
+  # JOB 1: Static Analysis & Tests
+  # ==========================================
+  analyze-and-test:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Checkout code
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    # Setup Flutter
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+    
+    # Get dependencies
+    - name: Get dependencies
+      run: flutter pub get
+    
+    # Verify formatting
+    - name: Verify formatting
+      run: dart format --output=none --set-exit-if-changed .
+    
+    # Analyze project source
+    - name: Analyze project source
+      run: flutter analyze --fatal-infos
+    
+    # Run tests
+    - name: Run tests
+      run: flutter test --coverage
+    
+    # Upload coverage to Codecov
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: coverage/lcov.info
+        fail_ci_if_error: false
+
+  # ==========================================
+  # JOB 2: Build Android APK
+  # ==========================================
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    needs: analyze-and-test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+    
+    - name: Get dependencies
+      run: flutter pub get
+    
+    # Setup JDK for Android
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    
+    # Create .env file from secrets (optional)
+    - name: Create .env file
+      run: |
+        echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > .env
+        echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    
+    # Build APK
+    - name: Build APK
+      run: flutter build apk --release
+    
+    # Upload APK
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-apk
+        path: build/app/outputs/flutter-apk/app-release.apk
+    
+    # Create Release (only on tags)
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: build/app/outputs/flutter-apk/app-release.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================
+  # JOB 3: Build iOS (solo en Mac)
+  # ==========================================
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    needs: analyze-and-test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+    
+    - name: Get dependencies
+      run: flutter pub get
+    
+    - name: Build iOS (no-codesign)
+      run: flutter build ios --release --no-codesign
+
+  # ==========================================
+  # JOB 4: Build Web
+  # ==========================================
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    needs: analyze-and-test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+    
+    - name: Get dependencies
+      run: flutter pub get
+    
+    - name: Build Web
+      run: flutter build web --release
+    
+    - name: Upload Web Build
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-build
+        path: build/web
+
+  # ==========================================
+  # JOB 5: Dependency Vulnerability Check
+  # ==========================================
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+    
+    - name: Check outdated dependencies
+      run: flutter pub outdated
+      continue-on-error: true
+    
+    - name: Dry run publish (check warnings)
+      run: flutter pub publish --dry-run
+      continue-on-error: true
