@@ -3,28 +3,55 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts"
 import { corsHeaders } from "../_shared/cors.ts"
 
+const toHex = (bytes: Uint8Array) =>
+    Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('')
+
+const sha256Hex = async (value: string) => {
+    const encoded = new TextEncoder().encode(value)
+    const digest = await crypto.subtle.digest('SHA-256', encoded)
+    return toHex(new Uint8Array(digest))
+}
+
+const verifyDevicePin = async (device: Record<string, unknown>, pin: string) => {
+    const pinHash = typeof device.pin_hash === 'string' ? device.pin_hash : null
+    const pinSalt = typeof device.pin_salt === 'string' ? device.pin_salt : null
+
+    if (pinHash && pinSalt) {
+        const calculated = await sha256Hex(`${pinSalt}:${pin}`)
+        return calculated === pinHash
+    }
+
+    const legacyPin = typeof device.pin === 'string' ? device.pin : null
+    return !!legacyPin && legacyPin === pin
+}
+
 serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
 
     try {
-        const supabaseClient = createClient(
+        const supabaseAdmin = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
         const { qr_token, event_slug, device_id, pin } = await req.json()
 
-        // 1. Validate Device (Simple PIN check for MVP)
-        // Ideally verify hash. For now assuming plain PIN passed or checked against DB hash.
-        const { data: device, error: deviceError } = await supabaseClient
+        if (!device_id || !pin) {
+            return new Response(JSON.stringify({ allowed: false, result: 'invalid_device', message: 'Credenciales de dispositivo incompletas' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        // 1. Validate Device + PIN (hash/legacy)
+        const { data: device, error: deviceError } = await supabaseAdmin
             .from('devices')
             .select('*')
-            .eq('device_id', device_id)
+            .or(`device_id.eq.${device_id},id.eq.${device_id}`)
             .single()
 
-        if (deviceError || !device || !device.enabled) {
+        const pinValid = device ? await verifyDevicePin(device as Record<string, unknown>, String(pin)) : false
+
+        if (deviceError || !device || !device.enabled || !pinValid) {
             return new Response(JSON.stringify({ allowed: false, result: 'invalid_device', message: 'Dispositivo no autorizado' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
@@ -35,7 +62,10 @@ serve(async (req) => {
         }
 
         const payloadStr = atob(payloadB64)
-        const secret = Deno.env.get('QR_SECRET_KEY') ?? 'default_secret_change_me'
+        const secret = Deno.env.get('QR_SECRET_KEY')
+        if (!secret) {
+            throw new Error('QR_SECRET_KEY is not configured')
+        }
         const expectedSignature = createHmac('sha256', secret).update(payloadStr).digest('hex')
 
         if (signature !== expectedSignature) {
@@ -43,12 +73,30 @@ serve(async (req) => {
         }
 
         const payload = JSON.parse(payloadStr)
+
+        // 3. Get Event by slug
+        const { data: eventData, error: eventError } = await supabaseAdmin
+            .from('events')
+            .select('id, organization_id')
+            .eq('slug', event_slug)
+            .single()
+
+        if (eventError || !eventData) {
+            return new Response(JSON.stringify({ allowed: false, result: 'invalid_event', message: 'Evento no encontrado' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
         if (payload.event_slug !== event_slug) {
             return new Response(JSON.stringify({ allowed: false, result: 'wrong_event', message: 'Entrada para otro evento' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
-        // 3. Check Ticket Status in DB
-        const { data: ticket, error: ticketError } = await supabaseClient
+        // 4. Organization verification — device org must match event org
+        if (device.organization_id && eventData.organization_id &&
+            device.organization_id !== eventData.organization_id) {
+            return new Response(JSON.stringify({ allowed: false, result: 'wrong_organization', message: 'Dispositivo no pertenece a la organizacion del evento' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        // 5. Check Ticket Status in DB
+        const { data: ticket, error: ticketError } = await supabaseAdmin
             .from('tickets')
             .select('*')
             .eq('qr_token', qr_token)
@@ -58,15 +106,14 @@ serve(async (req) => {
             return new Response(JSON.stringify({ allowed: false, result: 'not_found', message: 'Ticket no encontrado en base de datos' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
-        // 4. Logic
+        // 6. Logic
         if (ticket.status === 'void') {
-            await logCheckin(supabaseClient, ticket.id, event_slug, device_id, 'void', 'Ticket anulado')
+            await logCheckin(supabaseAdmin, ticket.id, eventData.id, device_id, 'void', 'qr', 'Ticket anulado')
             return new Response(JSON.stringify({ allowed: false, result: 'void', message: 'ENTRADA ANULADA', ticket }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
         if (ticket.status === 'used') {
-            // Find previous checkin
-            const { data: lastCheckin } = await supabaseClient
+            const { data: lastCheckin } = await supabaseAdmin
                 .from('checkins')
                 .select('scanned_at, device_id')
                 .eq('ticket_id', ticket.id)
@@ -75,15 +122,41 @@ serve(async (req) => {
                 .limit(1)
                 .single()
 
-            await logCheckin(supabaseClient, ticket.id, event_slug, device_id, 'already_used', 'Intento duplicado')
+            await logCheckin(supabaseAdmin, ticket.id, eventData.id, device_id, 'already_used', 'qr', 'Intento duplicado')
 
             const scannedAt = lastCheckin ? lastCheckin.scanned_at : 'Desconocido'
             return new Response(JSON.stringify({ allowed: false, result: 'already_used', message: `YA USADA a las ${scannedAt}`, ticket }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
-        // ALLOW
-        await supabaseClient.from('tickets').update({ status: 'used' }).eq('id', ticket.id)
-        await logCheckin(supabaseClient, ticket.id, event_slug, device_id, 'allowed', 'Acceso permitido')
+        // 7. ATOMIC update — prevents race condition with concurrent scans
+        const { data: updatedTicket, error: atomicError } = await supabaseAdmin
+            .from('tickets')
+            .update({
+                status: 'used',
+                scanned_at: new Date().toISOString()
+            })
+            .eq('id', ticket.id)
+            .eq('status', 'valid')
+            .select('id')
+            .maybeSingle()
+
+        if (atomicError) {
+            throw new Error(`Failed to update ticket: ${atomicError.message}`)
+        }
+
+        if (!updatedTicket) {
+            return new Response(JSON.stringify({ allowed: false, result: 'already_used', message: 'Ticket already scanned (concurrent validation detected)', ticket }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        await logCheckin(supabaseAdmin, ticket.id, eventData.id, device_id, 'allowed', 'qr', 'Acceso permitido via QR')
+
+        // 8. Audit log
+        await supabaseAdmin.from('audit_logs').insert({
+            action: 'validate_qr',
+            resource: `ticket:${ticket.id}`,
+            details: { method: 'qr', event_id: eventData.id, device_id },
+            ip_address: req.headers.get('x-real-ip') || req.headers.get('x-forwarded-for')
+        })
 
         return new Response(
             JSON.stringify({ allowed: true, result: 'allowed', message: 'ACCESO PERMITIDO', ticket }),
@@ -92,24 +165,19 @@ serve(async (req) => {
 
     } catch (error) {
         return new Response(
-            JSON.stringify({ error: error.message }),
+            JSON.stringify({ error: (error as Error).message }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 },
         )
     }
 })
 
-async function logCheckin(client: any, ticketId: string, eventSlug: string, deviceId: string, result: string, message: string) {
-    // Need event_id, simple lookup or pass it
-    // For speed, we might just store logic or assume event_id is fetched. 
-    // Simplified: Just inserting what we have or fetching event id wrapper.
-    const { data: ev } = await client.from('events').select('id').eq('slug', eventSlug).single()
-    if (ev) {
-        await client.from('checkins').insert({
-            ticket_id: ticketId,
-            event_id: ev.id,
-            device_id: deviceId,
-            result,
-            message
-        })
-    }
+async function logCheckin(client: any, ticketId: string, eventId: string, deviceId: string, result: string, method: string, notes: string) {
+    await client.from('checkins').insert({
+        ticket_id: ticketId,
+        event_id: eventId,
+        device_id: deviceId,
+        result,
+        method,
+        notes
+    })
 }

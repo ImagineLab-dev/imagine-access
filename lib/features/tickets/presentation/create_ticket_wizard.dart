@@ -9,7 +9,7 @@ import '../../../core/ui/neon_button.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/ticket_repository.dart';
 import '../../dashboard/data/dashboard_repository.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import '../../../core/ui/loading_overlay.dart';
 import '../../../core/constants/app_roles.dart';
 import 'ticket_list_screen.dart'; // Import to access ticketsProvider
@@ -78,7 +78,7 @@ class _CreateTicketWizardState extends ConsumerState<CreateTicketWizard> {
       final price = ref.read(ticketPriceProvider);
 
       // Call the Repository which calls the Edge Function
-      await ref.read(ticketRepositoryProvider).createTicket(
+        final createdTicket = await ref.read(ticketRepositoryProvider).createTicket(
           eventSlug: selectedEvent['slug'],
           type: type,
           price: price,
@@ -86,6 +86,10 @@ class _CreateTicketWizardState extends ConsumerState<CreateTicketWizard> {
           buyerEmail: _emailController.text.trim(),
           buyerDoc: _docController.text.trim(),
           buyerPhone: _phoneController.text.trim());
+
+        final emailSent = createdTicket['email_sent'] == true;
+        final emailError = createdTicket['email_error']?.toString();
+        final queued = createdTicket['queued'] == true;
 
       if (mounted) {
         // Refresh ALL data providers to ensure reactivity
@@ -98,6 +102,28 @@ class _CreateTicketWizardState extends ConsumerState<CreateTicketWizard> {
         } catch (_) {}
 
         setState(() => _isLoading = false);
+
+        if (queued) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              l10n.offlineTicketQueued,
+            ),
+            backgroundColor: AppTheme.warningColor,
+          ));
+          return;
+        }
+
+        if (!emailSent) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              emailError == null || emailError.isEmpty
+                  ? l10n.ticketCreatedEmailFailed
+                  : l10n.ticketCreatedEmailError(emailError),
+            ),
+            backgroundColor: AppTheme.warningColor,
+          ));
+        }
+
         _showSuccessDialog();
       }
     } catch (e) {
@@ -125,7 +151,7 @@ class _CreateTicketWizardState extends ConsumerState<CreateTicketWizard> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                   side: BorderSide(
-                      color: AppTheme.successColor.withOpacity(0.5))),
+                      color: AppTheme.successColor.withValues(alpha: 0.5))),
               title: Column(
                 children: [
                   const Icon(Icons.check_circle,
@@ -281,7 +307,8 @@ class _StepIndicator extends StatelessWidget {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-              color: isActive ? color.withOpacity(0.2) : Colors.transparent,
+                color:
+                  isActive ? color.withValues(alpha: 0.2) : Colors.transparent,
               shape: BoxShape.circle,
               border: Border.all(color: color, width: 2)),
           child: Center(
@@ -530,7 +557,7 @@ class _TypeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // Use the passed color as the base
-    final baseColor = enabled ? color : Colors.grey.withOpacity(0.3);
+    final baseColor = enabled ? color : Colors.grey.withValues(alpha: 0.3);
 
     return GestureDetector(
       onTap: enabled
@@ -545,10 +572,10 @@ class _TypeChip extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
             color: selected
-                ? baseColor.withOpacity(0.15)
+                ? baseColor.withValues(alpha: 0.15)
                 : (isDark
-                    ? Colors.white.withOpacity(0.05)
-                    : Colors.black.withOpacity(0.05)),
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : Colors.black.withValues(alpha: 0.05)),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
                 color: selected
@@ -558,7 +585,7 @@ class _TypeChip extends StatelessWidget {
             boxShadow: selected
                 ? [
                     BoxShadow(
-                        color: baseColor.withOpacity(0.3),
+                        color: baseColor.withValues(alpha: 0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 4))
                   ]

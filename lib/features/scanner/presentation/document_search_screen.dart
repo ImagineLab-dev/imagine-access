@@ -12,6 +12,8 @@ import '../../../core/utils/device_id_service.dart';
 import '../../../core/ui/loading_overlay.dart';
 import 'package:imagine_access/features/tickets/presentation/ticket_list_screen.dart';
 import 'package:imagine_access/features/dashboard/data/dashboard_repository.dart';
+import '../../auth/presentation/auth_controller.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 class DocumentSearchScreen extends ConsumerStatefulWidget {
   const DocumentSearchScreen({super.key});
@@ -30,6 +32,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
   Map<String, dynamic>? _scanResult;
 
   Future<void> _handleSearch() async {
+    final l10n = AppLocalizations.of(context)!;
     if (_queryController.text.isEmpty) return;
 
     setState(() {
@@ -38,7 +41,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
     });
     try {
       final selectedEvent = ref.read(selectedEventProvider);
-      if (selectedEvent == null) throw 'Seleccione un evento';
+      if (selectedEvent == null) throw l10n.pleaseSelectEvent;
 
       final results = await ref.read(scannerRepositoryProvider).searchTickets(
             query: _queryController.text.trim(),
@@ -49,8 +52,8 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
       setState(() {
         _foundTickets = results;
         if (results.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No se encontró ningún registro')));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(l10n.noRecordFound)));
         }
         _isLoading = false;
       });
@@ -58,21 +61,24 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+            .showSnackBar(SnackBar(content: Text(l10n.errorWithDetail(e.toString()))));
       }
     }
   }
 
   Future<void> _handleValidate(Map<String, dynamic> ticket) async {
+    final l10n = AppLocalizations.of(context)!;
     setState(() => _isLoading = true);
     try {
       ref.read(loadingProvider.notifier).state = true;
-      final deviceId = await ref.read(deviceIdProvider.future);
+      final session = ref.read(deviceProvider);
+      final fallbackDeviceId = await ref.read(deviceIdProvider.future);
+      final deviceId = session?.deviceId ?? fallbackDeviceId;
 
       final result = await ref.read(scannerRepositoryProvider).validateById(
             ticketId: ticket['id'],
             reason: _reasonController.text.isEmpty
-                ? 'Validación Manual'
+                ? l10n.manualValidation
                 : _reasonController.text,
             deviceId: deviceId,
           );
@@ -90,7 +96,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+            .showSnackBar(SnackBar(content: Text(l10n.errorWithDetail(e.toString()))));
       }
     } finally {
       if (mounted) ref.read(loadingProvider.notifier).state = false;
@@ -99,6 +105,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     if (_scanResult != null) {
       return _ManualResultView(
           result: _scanResult!,
@@ -110,14 +117,14 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
     }
 
     return GlassScaffold(
-      appBar: AppBar(title: const Text('BÚSQUEDA MANUAL')),
+      appBar: AppBar(title: Text(l10n.manualSearchTitle)),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Seleccione el tipo de búsqueda e ingrese los datos para validar la entrada.',
+              l10n.manualSearchDescription,
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
@@ -128,7 +135,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
               final selectedEvent = ref.watch(selectedEventProvider);
 
               return Text(
-                'EVENTO: ${selectedEvent?['name'] ?? 'NINGUNO'} (ID: ${selectedEvent?['id'] ?? 'N/A'})',
+                '${l10n.event.toUpperCase()}: ${selectedEvent?['name'] ?? l10n.unknown} (ID: ${(selectedEvent?['id'] ?? '-')})',
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
@@ -142,16 +149,16 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
                 children: [
                   // Dropdown for search type
                   DropdownButtonFormField<String>(
-                    value: _searchType,
-                    decoration: const InputDecoration(
-                      labelText: 'BUSCAR POR',
-                      prefixIcon: Icon(Icons.manage_search),
-                      border: OutlineInputBorder(),
+                    initialValue: _searchType,
+                    decoration: InputDecoration(
+                      labelText: l10n.searchByLabel,
+                      prefixIcon: const Icon(Icons.manage_search),
+                      border: const OutlineInputBorder(),
                     ),
-                    items: const [
+                    items: [
                       DropdownMenuItem(
-                          value: 'doc', child: Text('DOCUMENTO (CI / DNI)')),
-                      DropdownMenuItem(value: 'phone', child: Text('TELÉFONO')),
+                          value: 'doc', child: Text(l10n.searchByDocument)),
+                      DropdownMenuItem(value: 'phone', child: Text(l10n.searchByPhone)),
                     ],
                     onChanged: (v) => setState(() {
                       _searchType = v!;
@@ -163,8 +170,8 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
                     controller: _queryController,
                     decoration: InputDecoration(
                       labelText: _searchType == 'doc'
-                          ? 'NÚMERO DE DOCUMENTO'
-                          : 'NÚMERO DE TELÉFONO',
+                        ? l10n.documentNumberLabel
+                        : l10n.phoneNumberLabelUpper,
                       prefixIcon: Icon(_searchType == 'doc'
                           ? Icons.badge_outlined
                           : Icons.phone_android),
@@ -180,7 +187,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
             SizedBox(
               width: double.infinity,
               child: NeonButton(
-                text: 'BUSCAR ASISTENTE',
+                text: l10n.searchAttendee,
                 icon: Icons.search,
                 isLoading: _isLoading && _foundTickets.isEmpty,
                 onPressed: _handleSearch,
@@ -188,7 +195,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
             ),
             if (_foundTickets.isNotEmpty) ...[
               const SizedBox(height: 30),
-              Text('${_foundTickets.length} RESULTADOS ENCONTRADOS:',
+              Text(l10n.resultsFoundCount(_foundTickets.length),
                   style: const TextStyle(
                       color: AppTheme.neonBlue,
                       fontWeight: FontWeight.bold,
@@ -207,6 +214,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
   }
 
   Widget _buildTicketResultCard(Map<String, dynamic> ticket) {
+    final l10n = AppLocalizations.of(context)!;
     final status = ticket['status'] ?? 'valid';
     final isValid = status == 'valid';
 
@@ -237,25 +245,25 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
             ],
           ),
           const Divider(height: 30),
-          _infoRow('DNI/CI:', (ticket['buyer_doc'] ?? 'N/A').toString()),
-          _infoRow('TEL:', (ticket['buyer_phone'] ?? 'N/A').toString()),
+          _infoRow(l10n.dniCiLabel, (ticket['buyer_doc'] ?? '-').toString()),
+          _infoRow(l10n.phoneShortLabel, (ticket['buyer_phone'] ?? '-').toString()),
           if (isValid) ...[
             const SizedBox(height: 20),
             DropdownButtonFormField<String>(
-              decoration: const InputDecoration(
-                labelText: 'MOTIVO DE VALIDACIÓN',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.assignment_late_outlined),
+              decoration: InputDecoration(
+                labelText: l10n.validationReason,
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.assignment_late_outlined),
               ),
-              items: const [
+              items: [
                 DropdownMenuItem(
-                    value: 'QR no legible', child: Text('QR no legible')),
+                    value: l10n.qrNotReadable, child: Text(l10n.qrNotReadable)),
                 DropdownMenuItem(
-                    value: 'Email no recibido',
-                    child: Text('Email no recibido')),
+                    value: l10n.emailNotReceived,
+                    child: Text(l10n.emailNotReceived)),
                 DropdownMenuItem(
-                    value: 'Validación Manual',
-                    child: Text('Otro / Validación Manual')),
+                    value: l10n.manualValidation,
+                    child: Text(l10n.otherManualValidation)),
               ],
               onChanged: (value) {
                 if (value != null) _reasonController.text = value;
@@ -265,7 +273,7 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
             SizedBox(
               width: double.infinity,
               child: NeonButton(
-                text: 'CONFIRMAR Y VALIDAR',
+                text: l10n.confirmAndValidate,
                 icon: Icons.check_circle_outline,
                 isLoading: _isLoading,
                 onPressed: () => _handleValidate(ticket),
@@ -277,12 +285,12 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
               padding: const EdgeInsets.all(12),
               width: double.infinity,
               decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
+                  color: Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8)),
-              child: const Text(
-                'ESTE TICKET YA FUE UTILIZADO O NO ES VÁLIDO',
+              child: Text(
+                l10n.ticketAlreadyUsedInvalid,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                     color: Colors.red,
                     fontWeight: FontWeight.bold,
                     fontSize: 12),
@@ -321,8 +329,8 @@ class _DocumentSearchScreenState extends ConsumerState<DocumentSearchScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: isValid
-            ? Colors.green.withOpacity(0.2)
-            : Colors.red.withOpacity(0.2),
+            ? Colors.green.withValues(alpha: 0.2)
+            : Colors.red.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: isValid ? Colors.green : Colors.red),
       ),
@@ -344,6 +352,7 @@ class _ManualResultView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final success = result['success'] == true;
     final color = success ? AppTheme.accentGreen : AppTheme.errorColor;
     final ticket = result['ticket'];
@@ -360,7 +369,7 @@ class _ManualResultView extends StatelessWidget {
                   size: 100, color: Colors.white),
               const SizedBox(height: 20),
               Text(
-                success ? 'INGRESO AUTORIZADO' : 'ERROR DE VALIDACIÓN',
+                success ? l10n.accessGranted : l10n.accessDenied,
                 style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
@@ -379,16 +388,16 @@ class _ManualResultView extends StatelessWidget {
                       Text(ticket['type'],
                           style: const TextStyle(color: Colors.white70)),
                       const Divider(height: 30),
-                      const Text('VALIDACIÓN MANUAL AUDITADA',
-                          style:
-                              TextStyle(fontSize: 10, color: Colors.white54)),
+                      Text(l10n.manualValidationAudited,
+                          style: const TextStyle(
+                              fontSize: 10, color: Colors.white54)),
                     ],
                   ),
                 ),
               ],
               const SizedBox(height: 60),
-              const Text('TOCA PARA CONTINUAR',
-                  style: TextStyle(color: Colors.white54, letterSpacing: 2)),
+              Text(l10n.tapToDismiss,
+                  style: const TextStyle(color: Colors.white54, letterSpacing: 2)),
             ],
           ).animate().scale(),
         ),

@@ -10,7 +10,7 @@ import '../presentation/create_event_screen.dart';
 import '../../auth/presentation/auth_controller.dart';
 import 'event_state.dart';
 
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 class AdminEventList extends ConsumerWidget {
   final List<Map<String, dynamic>> events;
@@ -134,8 +134,8 @@ class AdminEventList extends ConsumerWidget {
                   height: 60,
                   decoration: BoxDecoration(
                       color: isActive
-                          ? AppTheme.accentGreen.withOpacity(0.1)
-                          : Colors.grey.withOpacity(0.1),
+                        ? AppTheme.accentGreen.withValues(alpha: 0.1)
+                        : Colors.grey.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                           color: isActive
@@ -212,7 +212,7 @@ class AdminEventList extends ConsumerWidget {
           background: Container(
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 20),
-            color: Colors.red.withOpacity(0.2),
+            color: Colors.red.withValues(alpha: 0.2),
             child: const Icon(Icons.delete, color: Colors.red),
           ),
           child: cardContent,

@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:developer' as dev;
 import 'package:flutter_animate/flutter_animate.dart';
 import '../data/ticket_repository.dart';
+import '../../auth/presentation/auth_controller.dart';
+import '../../../core/constants/app_roles.dart';
 import '../../../core/ui/glass_scaffold.dart';
 import '../../../core/ui/glass_card.dart';
 import '../../../core/ui/custom_input.dart';
 import '../../../core/ui/status_badge.dart';
 
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 // Provider for tickets list
 final ticketsProvider =
@@ -121,12 +124,12 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
                         Icon(Icons.search_off,
                             size: 60,
                             color:
-                                theme.colorScheme.onSurface.withOpacity(0.2)),
+                            theme.colorScheme.onSurface.withValues(alpha: 0.2)),
                         const SizedBox(height: 16),
                         Text(l10n.noTicketsFound,
                             style: TextStyle(
                                 color: theme.colorScheme.onSurface
-                                    .withOpacity(0.5))),
+                                .withValues(alpha: 0.5))),
                       ],
                     ),
                   );
@@ -242,11 +245,11 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
               width: 50,
               height: 50,
               decoration: BoxDecoration(
-                color: theme.colorScheme.onSurface.withOpacity(0.05),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(Icons.confirmation_num_outlined,
-                  color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -258,9 +261,11 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
                           ?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 2),
                   Text(
-                    'Enviado por: ${ticket['users_profile']?['display_name'] ?? 'Sistema'}',
+                    l10n.sentByLine(
+                      ticket['users_profile']?['display_name'] ?? l10n.systemUser,
+                    ),
                     style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.6)),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -275,7 +280,7 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
                           height: 4,
                           decoration: BoxDecoration(
                               color:
-                                  theme.colorScheme.onSurface.withOpacity(0.3),
+                                theme.colorScheme.onSurface.withValues(alpha: 0.3),
                               shape: BoxShape.circle)),
                       const SizedBox(width: 8),
                       Expanded(
@@ -283,7 +288,7 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
                               style: theme.textTheme.bodySmall?.copyWith(
                                   fontFamily: 'monospace',
                                   color: theme.colorScheme.onSurface
-                                      .withOpacity(0.5)),
+                                      .withValues(alpha: 0.5)),
                               overflow: TextOverflow.ellipsis)),
                       if (ticket['email_sent_at'] != null)
                         Padding(
@@ -308,6 +313,10 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
 
   void _showTicketDetails(BuildContext context, Map<String, dynamic> ticket,
       AppLocalizations l10n, WidgetRef ref) {
+    final role = ref.read(userRoleProvider);
+    final isDevice = ref.read(deviceProvider) != null;
+    final isAdmin = role == AppRoles.admin;
+    final canResend = isAdmin || role == AppRoles.rrpp;
     showModalBottomSheet(
         context: context,
         backgroundColor: Colors.transparent,
@@ -334,7 +343,7 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withOpacity(0.2),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -345,13 +354,13 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
                         ?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
                 _detailRow(
-                    l10n.buyerInfo, ticket['buyer_name'] ?? 'Guest', theme),
+                  l10n.buyerInfo, ticket['buyer_name'] ?? l10n.guest, theme),
                 _detailRow(
-                    l10n.email, ticket['buyer_email'] ?? 'Unknown', theme),
+                  l10n.email, ticket['buyer_email'] ?? l10n.unknown, theme),
                 _detailRow(l10n.ticketType,
                     (ticket['type'] ?? '').toString().toUpperCase(), theme),
                 _detailRow("ID", id.toString(), theme),
-                _detailRow("Status", status.toString().toUpperCase(), theme),
+                _detailRow(l10n.statusLabel, status.toString().toUpperCase(), theme),
                 if (ticket['events'] != null)
                   _detailRow(l10n.event, ticket['events']['name'] ?? '', theme),
                 if (ticket['email_sent_at'] != null)
@@ -365,38 +374,58 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        icon: const Icon(Icons.email_outlined),
-                        label: Text(l10n.resendEmail),
-                        onPressed: () async {
-                          Navigator.pop(context);
-                          try {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(l10n.sending)));
-                            await ref
-                                .read(ticketRepositoryProvider)
-                                .resendTicket(id);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(l10n.emailResent),
-                                      backgroundColor: Colors.green));
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text('Error: $e'),
-                                      backgroundColor: Colors.red));
-                            }
-                          }
+                        icon: const Icon(Icons.share_outlined),
+                        label: Text(l10n.share),
+                        onPressed: () {
+                          final link = 'imagineaccess://ticket/$id';
+                          final message = l10n.sharedTicketMessage(link, id.toString());
+                          Share.share(message);
                         },
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: BorderSide(color: theme.colorScheme.primary),
+                          side: BorderSide(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                          ),
                         ),
                       ),
                     ),
-                    if (!isVoid) ...[
+                    if (canResend && !isDevice) ...[
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.email_outlined),
+                          label: Text(l10n.resendEmail),
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            try {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(l10n.sending)));
+                              await ref
+                                  .read(ticketRepositoryProvider)
+                                  .resendTicket(id);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(l10n.emailResent),
+                                        backgroundColor: Colors.green));
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(l10n.errorWithDetail(e.toString())),
+                                        backgroundColor: Colors.red));
+                              }
+                            }
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            side: BorderSide(color: theme.colorScheme.primary),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (!isVoid && isAdmin && !isDevice) ...[
                       const SizedBox(width: 16),
                       Expanded(
                         child: ElevatedButton.icon(
@@ -444,7 +473,7 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
                                                   ScaffoldMessenger.of(context)
                                                       .showSnackBar(SnackBar(
                                                           content:
-                                                              Text('Error: $e'),
+                                                              Text(l10n.errorWithDetail(e.toString())),
                                                           backgroundColor:
                                                               Colors.red));
                                                 }
@@ -478,7 +507,7 @@ class _TicketListScreenState extends ConsumerState<TicketListScreen> {
               width: 100,
               child: Text(label,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6)))),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6)))),
           Expanded(
               child: Text(value,
                   style: theme.textTheme.bodyMedium
@@ -519,18 +548,18 @@ class _FilterChip extends StatelessWidget {
       label: Text(label),
       selected: isSelected,
       onSelected: (v) => onChanged(value),
-      backgroundColor: theme.colorScheme.surface.withOpacity(0.5),
-      selectedColor: theme.colorScheme.primary.withOpacity(0.2),
+        backgroundColor: theme.colorScheme.surface.withValues(alpha: 0.5),
+        selectedColor: theme.colorScheme.primary.withValues(alpha: 0.2),
       labelStyle: TextStyle(
           color: isSelected
               ? theme.colorScheme.primary
-              : theme.colorScheme.onSurface.withOpacity(0.6),
+            : theme.colorScheme.onSurface.withValues(alpha: 0.6),
           fontWeight: FontWeight.bold,
           fontSize: 12),
       side: BorderSide(
         color: isSelected
             ? theme.colorScheme.primary
-            : theme.colorScheme.onSurface.withOpacity(0.1),
+          : theme.colorScheme.onSurface.withValues(alpha: 0.1),
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       showCheckmark: false,

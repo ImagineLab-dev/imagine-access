@@ -1,11 +1,11 @@
 {
-    "name": "imagine_access",
-    "short_name": "imagine_access",
+    "name": "Imagine Access",
+    "short_name": "Imagine Access",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Event access control & ticket management platform.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

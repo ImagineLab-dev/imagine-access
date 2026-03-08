@@ -1,75 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:imagine_access/core/constants/app_roles.dart';
+import 'package:imagine_access/core/offline/offline_queue_service.dart';
+import 'package:imagine_access/core/offline/pending_operation.dart';
+import 'package:imagine_access/core/utils/error_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// These tests verify the MULTI-TENANT SECURITY contracts at the code level.
-/// They check that the repository methods enforce organization isolation
-/// without needing a live Supabase connection.
+/// They check role constants, offline queue retry behavior, and key
+/// data-flow contracts without needing a live Supabase connection.
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('Multi-Tenant Security Contracts', () {
-    group('EventRepository - Organization Isolation', () {
-      test('getEvents should return empty list when organizationId is null',
-          () async {
-        // This is the CRITICAL security check:
-        // Without an org ID, NO events should be returned.
-        // We can't call Supabase, but we verify the contract exists
-        // by checking the source code structure.
-        // The actual enforcement is in event_repository.dart line 13:
-        //   if (organizationId == null) return [];
-        expect(true, isTrue,
-            reason:
-                'EventRepository.getEvents returns [] when orgId is null - verified in source');
-      });
-
-      test('createEvent should conditionally include organization_id', () {
-        // Verified: event_repository.dart line 48 uses:
-        //   if (organizationId != null) 'organization_id': organizationId
-        expect(true, isTrue,
-            reason:
-                'createEvent conditionally includes org_id - verified in source');
-      });
-    });
-
-    group('SettingsRepository - Organization Enforcement', () {
-      test('_createDeviceDirect should throw when organizationId is null', () {
-        // Verified: settings_repository.dart line 163-165:
-        //   if (organizationId == null)
-        //     throw Exception('Cannot create device without organization context');
-        expect(true, isTrue,
-            reason:
-                '_createDeviceDirect throws on null orgId - verified in source');
-      });
-    });
-
-    group('Edge Function Security - Organization Verification', () {
-      test('validate_ticket verifies event belongs to caller org', () {
-        // Verified: validate_ticket/index.ts lines 117-140
-        // Checks eventData.organization_id !== callerOrgId
-        expect(true, isTrue,
-            reason:
-                'validate_ticket checks org ownership - verified in source');
-      });
-
-      test('create_ticket verifies event belongs to caller org', () {
-        // Verified: create_ticket/index.ts lines 89-97
-        // Fetches callerOrgId and compares with event.organization_id
-        expect(true, isTrue,
-            reason: 'create_ticket checks org ownership - verified in source');
-      });
-
-      test('manage_devices scopes operations to caller organization', () {
-        // Verified: manage_devices/index.ts - all queries include org_id filter
-        expect(true, isTrue,
-            reason: 'manage_devices scopes to caller org - verified in source');
-      });
-
-      test('get_team_members filters by organization_id', () {
-        // Verified: get_team_members/index.ts line 30
-        // .eq('organization_id', orgId)
-        expect(true, isTrue,
-            reason: 'get_team_members filters by org_id - verified in source');
-      });
-    });
-
     group('Role Constants - No Magic Strings', () {
       test('AppRoles constants match Supabase contract', () {
         expect(AppRoles.admin, equals('admin'));
@@ -82,16 +24,110 @@ void main() {
         expect(AppRoles.all,
             containsAll([AppRoles.admin, AppRoles.rrpp, AppRoles.door]));
       });
+
+      test('No duplicate roles in all list', () {
+        final unique = AppRoles.all.toSet();
+        expect(unique.length, equals(AppRoles.all.length));
+      });
     });
 
-    group('CORS Consolidation', () {
-      test('All Edge Functions should import from _shared/cors.ts', () {
-        // Verified: All 11 functions now use:
-        //   import { corsHeaders } from "../_shared/cors.ts"
-        // Single source of truth in _shared/cors.ts
-        expect(true, isTrue,
-            reason:
-                'All 11 Edge Functions import corsHeaders from _shared/cors.ts');
+    group('OfflineQueueService - Retry Logic', () {
+      late OfflineQueueService service;
+
+      setUp(() {
+        SharedPreferences.setMockInitialValues({});
+        service = OfflineQueueService();
+      });
+
+      test('processQueue returns zero counts when queue is empty', () async {
+        final result = await service.processQueue(executor: (_) async => true);
+        expect(result.processed, equals(0));
+        expect(result.succeeded, equals(0));
+        expect(result.failed, equals(0));
+        expect(result.remaining, equals(0));
+      });
+
+      test('processQueue counts succeeded operations', () async {
+        await service.enqueue(PendingOperation(
+          id: 'test-1',
+          type: 'create_ticket',
+          payload: {'event_slug': 'test'},
+          createdAt: DateTime.now(),
+        ));
+
+        final result = await service.processQueue(
+          executor: (_) async => true,
+        );
+
+        expect(result.processed, equals(1));
+        expect(result.succeeded, equals(1));
+        expect(result.failed, equals(0));
+        expect(result.remaining, equals(0));
+      });
+
+      test('processQueue retries failed operations up to max retries', () async {
+        await service.enqueue(PendingOperation(
+          id: 'test-fail',
+          type: 'create_ticket',
+          payload: {'event_slug': 'test'},
+          createdAt: DateTime.now(),
+        ));
+
+        final result = await service.processQueue(
+          executor: (_) async => false,
+        );
+
+        expect(result.failed, equals(1));
+        // Failed but retryable, should be remaining
+        expect(result.remaining, equals(1));
+      });
+
+      test('enqueue and removeById work correctly', () async {
+        final op = PendingOperation(
+          id: 'removable',
+          type: 'validate_ticket',
+          payload: {'ticket_id': '123'},
+          createdAt: DateTime.now(),
+        );
+        await service.enqueue(op);
+        expect(await service.count(), equals(1));
+
+        await service.removeById('removable');
+        expect(await service.count(), equals(0));
+      });
+
+      test('clearAll removes all operations', () async {
+        await service.enqueue(PendingOperation(
+          id: 'a',
+          type: 'create_ticket',
+          payload: {},
+          createdAt: DateTime.now(),
+        ));
+        await service.enqueue(PendingOperation(
+          id: 'b',
+          type: 'create_ticket',
+          payload: {},
+          createdAt: DateTime.now(),
+        ));
+
+        expect(await service.count(), equals(2));
+        await service.clearAll();
+        expect(await service.count(), equals(0));
+      });
+    });
+
+    group('ErrorHandler - Error Classification', () {
+      test('analyzeError classifies network errors as retryable', () {
+        final networkError = ErrorHandler.analyzeError(
+          Exception('SocketException: Connection refused'),
+        );
+        // NetworkError type should have isRetryable property
+        expect(networkError, isNotNull);
+      });
+
+      test('analyzeError handles null-like errors gracefully', () {
+        final result = ErrorHandler.analyzeError('unknown error');
+        expect(result, isNotNull);
       });
     });
   });

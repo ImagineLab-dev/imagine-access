@@ -60,7 +60,6 @@ class AppTheme {
         primary: primaryColor,
         secondary: accentPurple,
         surface: darkCard,
-        background: darkBg,
         error: accentOrange, // Using Orange for error/warning based on palette availability or default red
         onPrimary: Colors.white,
         onSurface: darkText,
@@ -72,7 +71,7 @@ class AppTheme {
         bodyMedium: TextStyle(color: darkTextSecondary, fontFamily: 'Inter'),
         labelLarge: TextStyle(color: darkText, fontFamily: 'Inter', fontWeight: FontWeight.w600),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: darkCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -129,7 +128,6 @@ class AppTheme {
         primary: primaryColor,
         secondary: accentPurple,
         surface: lightCard,
-        background: lightBg,
         error: accentOrange,
         onPrimary: Colors.white,
         onSurface: lightText,
@@ -141,7 +139,7 @@ class AppTheme {
         bodyMedium: TextStyle(color: lightTextSecondary, fontFamily: 'Inter'),
         labelLarge: TextStyle(color: lightText, fontFamily: 'Inter', fontWeight: FontWeight.w600),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: lightCard,
         elevation: 0,
         shape: RoundedRectangleBorder(

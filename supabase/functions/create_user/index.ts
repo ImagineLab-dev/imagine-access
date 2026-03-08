@@ -23,6 +23,19 @@ serve(async (req) => {
         )
         if (callerError || !caller) throw new Error('Unauthorized')
 
+        let callerRole = caller.app_metadata?.role
+        if (!callerRole) {
+            const { data: callerProfileRole } = await supabaseAdmin
+                .from('users_profile')
+                .select('role')
+                .eq('user_id', caller.id)
+                .single()
+            callerRole = callerProfileRole?.role
+        }
+        if (callerRole !== 'admin') {
+            throw new Error('Forbidden: Admin role required')
+        }
+
         // Get caller's organization_id
         let callerOrgId = caller.user_metadata?.organization_id
         if (!callerOrgId) {
@@ -57,17 +70,18 @@ serve(async (req) => {
         if (userError) {
             if (userError.message.includes("already been registered")) {
                 console.log("User exists, fetching ID to update profile...")
-                const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+                
+                // Use org-scoped RPC instead of listing ALL users (security fix)
+                const { data: foundUserId, error: lookupError } = await supabaseAdmin.rpc(
+                    'get_user_id_by_email',
+                    { p_email: email }
+                )
 
-                if (listError) throw listError
-
-                const existingUser = users.find((u: any) => u.email === email)
-
-                if (!existingUser) {
-                    throw new Error("User reported as registered but not found in list.")
+                if (lookupError || !foundUserId) {
+                    throw new Error("User reported as registered but could not be resolved. Contact support.")
                 }
 
-                userId = existingUser.id
+                userId = foundUserId
             } else {
                 throw userError
             }

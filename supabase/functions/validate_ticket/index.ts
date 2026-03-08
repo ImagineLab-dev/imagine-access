@@ -20,6 +20,19 @@ serve(async (req) => {
         const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
         if (authError || !user) throw new Error('Unauthorized');
 
+        let callerRole = user.app_metadata?.role;
+        if (!callerRole) {
+            const { data: roleProfile } = await supabaseAdmin
+                .from('users_profile')
+                .select('role')
+                .eq('user_id', user.id)
+                .single();
+            callerRole = roleProfile?.role;
+        }
+        if (callerRole !== 'admin' && callerRole !== 'door') {
+            throw new Error('Forbidden: only Admin or Door can validate tickets');
+        }
+
         const { method, qr_token, buyer_doc, event_id, notes, device_id, request_id, ticket_id } = await req.json()
 
         let ticket;
@@ -31,7 +44,10 @@ serve(async (req) => {
             // Verify Signature
             const [payloadB64, signature] = qr_token.split('.');
             const payloadStr = atob(payloadB64);
-            const secret = Deno.env.get('QR_SECRET_KEY') ?? 'default_secret_change_me'
+            const secret = Deno.env.get('QR_SECRET_KEY')
+            if (!secret) {
+                throw new Error('QR_SECRET_KEY is not configured');
+            }
             const expectedSig = createHmac('sha256', secret).update(payloadStr).digest('hex');
 
             if (signature !== expectedSig) {
@@ -156,6 +172,26 @@ serve(async (req) => {
             }
         }
 
+        // Atomically update ticket status (prevents TOCTOU race)
+        const { data: updatedTicket, error: atomicUpdateError } = await supabaseAdmin
+            .from('tickets')
+            .update({
+                status: 'used',
+                scanned_at: new Date().toISOString()
+            })
+            .eq('id', ticket.id)
+            .eq('status', 'valid')
+            .select('id')
+            .maybeSingle();
+
+        if (atomicUpdateError) {
+            throw new Error(`Failed to update ticket: ${atomicUpdateError.message}`);
+        }
+
+        if (!updatedTicket) {
+            throw new Error('Ticket already scanned (concurrent validation detected)');
+        }
+
         // Insert record in checkins
         const { error: checkinError } = await supabaseAdmin
             .from('checkins')
@@ -163,7 +199,7 @@ serve(async (req) => {
                 ticket_id: ticket.id,
                 event_id: ticket.event_id,
                 operator_user: user.id,
-                device_id: final_device_id, // NULL if not registered
+                device_id: final_device_id,
                 method: method,
                 result: 'allowed',
                 notes: notes,
@@ -175,19 +211,6 @@ serve(async (req) => {
                 throw new Error("Ticket already scanned");
             }
             throw checkinError;
-        }
-
-        // Update Ticket Status
-        const { error: updateError } = await supabaseAdmin
-            .from('tickets')
-            .update({
-                status: 'used',
-                scanned_at: new Date().toISOString()
-            })
-            .eq('id', ticket.id);
-
-        if (updateError) {
-            console.error(`Status update error for ticket ${ticket.id}:`, updateError);
         }
 
         // 5. AUDIT LOG

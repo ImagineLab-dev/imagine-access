@@ -1,25 +1,37 @@
+import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:developer' as dev;
 import '../../events/presentation/event_state.dart';
+import '../../../core/utils/error_handler.dart';
+import '../../../core/utils/ttl_cache.dart';
 
 class DashboardRepository {
   final SupabaseClient _client;
+  final TtlCacheStore _cacheStore;
 
-  DashboardRepository(this._client);
+  DashboardRepository(this._client, {TtlCacheStore? cacheStore})
+      : _cacheStore = cacheStore ?? InMemoryTtlCacheStore();
 
   Future<Map<String, dynamic>> getMetrics(String? eventId) async {
     if (eventId == null) return {};
+
+    final cacheKey = 'dashboard:metrics:$eventId';
+    final cached = _cacheStore.get<Map<String, dynamic>>(cacheKey);
+    if (cached != null && cached.isValidAt(DateTime.now())) {
+      return cached.value;
+    }
 
     try {
       final response = await _client.rpc(
         'get_staff_dashboard',
         params: {'p_event_id': eventId},
       );
-
-      return Map<String, dynamic>.from(response);
+      final mapped = Map<String, dynamic>.from(response);
+      _cacheStore.set(cacheKey, mapped, ttl: const Duration(minutes: 1));
+      return mapped;
     } catch (e) {
-      dev.log('Error fetching metrics', error: e, name: 'DashboardRepository');
+      ErrorHandler.logError('getMetrics', e, source: 'DashboardRepository');
+      if (cached != null) return cached.value;
       return {};
     }
   }
@@ -27,26 +39,54 @@ class DashboardRepository {
   Future<List<Map<String, dynamic>>> getRecentActivity(String? eventId) async {
     if (eventId == null) return [];
 
-    final response = await _client
-        .from('checkins')
-        .select(
-            '*, tickets(buyer_name, type, users_profile!created_by(display_name))')
-        .eq('event_id', eventId)
-        .order('scanned_at', ascending: false)
-        .limit(5);
-    return List<Map<String, dynamic>>.from(response);
+    final cacheKey = 'dashboard:recent:$eventId';
+    final cached = _cacheStore.get<List<Map<String, dynamic>>>(cacheKey);
+    if (cached != null && cached.isValidAt(DateTime.now())) {
+      return cached.value;
+    }
+
+    try {
+      final response = await _client
+          .from('checkins')
+          .select(
+              '*, tickets(buyer_name, type, users_profile!created_by(display_name))')
+          .eq('event_id', eventId)
+          .order('scanned_at', ascending: false)
+          .limit(5);
+      final mapped = List<Map<String, dynamic>>.from(response);
+      _cacheStore.set(cacheKey, mapped, ttl: const Duration(seconds: 30));
+      return mapped;
+    } catch (e) {
+      ErrorHandler.logError(
+        'getRecentActivity',
+        e,
+        source: 'DashboardRepository',
+      );
+      if (cached != null) return cached.value;
+      return [];
+    }
   }
 
   Future<Map<String, dynamic>> getStats(String? eventId) async {
     if (eventId == null) return {};
+
+    final cacheKey = 'dashboard:stats:$eventId';
+    final cached = _cacheStore.get<Map<String, dynamic>>(cacheKey);
+    if (cached != null && cached.isValidAt(DateTime.now())) {
+      return cached.value;
+    }
+
     try {
       final response = await _client.rpc(
         'get_event_statistics',
         params: {'p_event_id': eventId},
       );
-      return Map<String, dynamic>.from(response);
+      final mapped = Map<String, dynamic>.from(response);
+      _cacheStore.set(cacheKey, mapped, ttl: const Duration(minutes: 1));
+      return mapped;
     } catch (e) {
-      dev.log('Error fetching stats', error: e, name: 'DashboardRepository');
+      ErrorHandler.logError('getStats', e, source: 'DashboardRepository');
+      if (cached != null) return cached.value;
       return {};
     }
   }
@@ -85,7 +125,7 @@ final dashboardRealtimeProvider = Provider.autoDispose<void>((ref) {
   final eventId = selectedEvent['id'];
   final supabase = Supabase.instance.client;
 
-  dev.log('Setting up Realtime for event: $eventId', name: 'DashboardRealtime');
+  dev.log('Dashboard realtime setup: event=$eventId', name: 'DashboardRealtime');
 
   final channel = supabase
       .channel('dashboard_updates_$eventId')
@@ -99,7 +139,11 @@ final dashboardRealtimeProvider = Provider.autoDispose<void>((ref) {
           value: eventId,
         ),
         callback: (payload) {
-          dev.log('Realtime change in checkins', name: 'DashboardRealtime');
+          ErrorHandler.logError(
+            'Realtime checkins change',
+            payload,
+            source: 'DashboardRealtime',
+          );
           ref.invalidate(dashboardMetricsProvider);
           ref.invalidate(recentActivityProvider);
           ref.invalidate(eventStatsProvider);
@@ -115,7 +159,11 @@ final dashboardRealtimeProvider = Provider.autoDispose<void>((ref) {
           value: eventId,
         ),
         callback: (payload) {
-          dev.log('Realtime change in tickets', name: 'DashboardRealtime');
+          ErrorHandler.logError(
+            'Realtime tickets change',
+            payload,
+            source: 'DashboardRealtime',
+          );
           ref.invalidate(dashboardMetricsProvider);
           ref.invalidate(recentActivityProvider);
           ref.invalidate(eventStatsProvider);
@@ -124,8 +172,7 @@ final dashboardRealtimeProvider = Provider.autoDispose<void>((ref) {
       .subscribe();
 
   ref.onDispose(() {
-    dev.log('Disposing Realtime for event: $eventId',
-        name: 'DashboardRealtime');
+    dev.log('Dashboard realtime disposed: event=$eventId', name: 'DashboardRealtime');
     supabase.removeChannel(channel);
   });
 });

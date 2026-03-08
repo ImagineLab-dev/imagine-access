@@ -172,5 +172,202 @@
   "signUp": "Criar Conta",
   "displayName": "Nome de Exibição",
   "doNotHaveAccount": "Não tem uma conta?",
-  "alreadyHaveAccount": "Já tem uma conta?"
+  "alreadyHaveAccount": "Já tem uma conta?",
+  "welcomeTagline": "Controle acesso, ingressos e validação com elegância e precisão",
+  "welcomeMainFeatures": "FUNÇÕES PRINCIPAIS",
+  "systemOnline": "Sistema online",
+  "lockoutWaitSeconds": "Muitas tentativas. Aguarde {seconds}s.",
+  "@lockoutWaitSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "invalidCredentials": "Credenciais inválidas.",
+  "companyName": "Nome da Empresa",
+  "enterCompanyName": "Informe o nome da sua empresa",
+  "invalidEmail": "Email inválido",
+  "passwordMinLength": "A senha deve ter pelo menos 6 caracteres",
+  "retry": "TENTAR NOVAMENTE",
+  "darkMode": "Escuro",
+  "lightMode": "Claro",
+  "reloadLocaleData": "Recarregar idioma e dados",
+  "updated": "Atualizado!",
+  "addMember": "Adicionar Membro",
+  "unknown": "Desconhecido",
+  "deleteMemberQuestion": "Excluir Membro?",
+  "confirmRemoveMember": "Tem certeza de que deseja remover {name}?",
+  "@confirmRemoveMember": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "addTeamMember": "Adicionar Membro da Equipe",
+  "roleLabel": "Função",
+  "userCreatedSuccessfully": "Usuário criado com sucesso!",
+  "createUser": "Criar Usuário",
+  "thisDevice": "ESTE DISPOSITIVO",
+  "deviceEnabled": "Dispositivo ativado",
+  "deviceDisabled": "Dispositivo desativado",
+  "deleteDeviceQuestion": "Excluir Dispositivo?",
+  "confirmDeleteAlias": "Tem certeza de que deseja excluir \"{alias}\"?",
+  "@confirmDeleteAlias": {
+    "placeholders": {
+      "alias": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceDeleted": "Dispositivo excluído",
+  "errorDeletingDevice": "Erro ao excluir: {error}",
+  "@errorDeletingDevice": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "pinCopied": "PIN copiado!",
+  "deviceCreatedSuccessfully": "Dispositivo criado com sucesso!",
+  "failedToCreateDevice": "Falha ao criar dispositivo: {error}",
+  "@failedToCreateDevice": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "teamForEvent": "Equipe: {eventName}",
+  "@teamForEvent": {
+    "placeholders": {
+      "eventName": {
+        "type": "String"
+      }
+    }
+  },
+  "addStaffToEvent": "Adicionar Staff ao Evento",
+  "noStaffAssignedToEvent": "Nenhum staff atribuído a este evento.",
+  "unknownUser": "Usuário desconhecido",
+  "user": "Usuário",
+  "standardShort": "STANDARD",
+  "invitationShort": "INVIT",
+  "vipShort": "VIP",
+  "selectUser": "Selecionar Usuário",
+  "roleInEvent": "Função no Evento",
+  "addAction": "Adicionar",
+  "editQuotasFor": "Editar Cotas: {userName}",
+  "@editQuotasFor": {
+    "placeholders": {
+      "userName": {
+        "type": "String"
+      }
+    }
+  },
+  "standardTicketQuota": "Cota de Ticket Standard",
+  "guestListQuotaVip": "Cota Lista Guest (VIP)",
+  "invitationQuotaNormal": "Cota de Convite (Normal)",
+  "manualUpper": "MANUAL",
+  "systemUser": "Sistema",
+  "activityByLine": "{buyer} • por {validator}",
+  "@activityByLine": {
+    "placeholders": {
+      "buyer": {
+        "type": "String"
+      },
+      "validator": {
+        "type": "String"
+      }
+    }
+  },
+  "sentByLine": "Enviado por: {sender}",
+  "@sentByLine": {
+    "placeholders": {
+      "sender": {
+        "type": "String"
+      }
+    }
+  },
+  "statusLabel": "Status",
+  "share": "Compartilhar",
+  "sharedTicketMessage": "Ingresso compartilhado\n{link}\n\nID: {id}",
+  "@sharedTicketMessage": {
+    "placeholders": {
+      "link": {
+        "type": "String"
+      },
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "errorWithDetail": "Erro: {error}",
+  "@errorWithDetail": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "manualSearchTitle": "BUSCA MANUAL",
+  "manualSearchDescription": "Selecione o tipo de busca e informe os dados para validar a entrada.",
+  "searchByLabel": "BUSCAR POR",
+  "searchByDocument": "DOCUMENTO (ID)",
+  "searchByPhone": "TELEFONE",
+  "documentNumberLabel": "NÚMERO DO DOCUMENTO",
+  "phoneNumberLabelUpper": "NÚMERO DE TELEFONE",
+  "searchAttendee": "BUSCAR PARTICIPANTE",
+  "resultsFoundCount": "{count} RESULTADOS ENCONTRADOS:",
+  "@resultsFoundCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dniCiLabel": "DOC/ID:",
+  "phoneShortLabel": "TEL:",
+  "validationReason": "MOTIVO DA VALIDAÇÃO",
+  "qrNotReadable": "QR ilegível",
+  "emailNotReceived": "Email não recebido",
+  "manualValidation": "Validação Manual",
+  "otherManualValidation": "Outro / Validação Manual",
+  "confirmAndValidate": "CONFIRMAR E VALIDAR",
+  "ticketAlreadyUsedInvalid": "ESTE INGRESSO JÁ FOI USADO OU NÃO É VÁLIDO",
+  "manualValidationAudited": "VALIDAÇÃO MANUAL AUDITADA",
+  "noRecordFound": "Nenhum registro encontrado",
+  "eventCreatedSuccessfully": "Evento criado com sucesso!",
+  "ticketLoadedFromDeepLink": "Ingresso carregado via deep link.",
+  "couldNotOpenSharedTicket": "Não foi possível abrir o ingresso compartilhado.",
+  "professionalAccessStaff": "Acesso Profissional (Staff)",
+  "createsStaffAccessTicket": "Cria ingresso 'Staff Access' (Preço: 0)",
+  "enableInvitationsNormal": "Habilitar Convites (Normal)",
+  "createsInvitationTicketForQuotas": "Cria ingresso 'Invitation' (Preço: 0) - Para cotas RRPP",
+  "setValidUntilTimeOptional": "Definir horário válido até (Opcional)",
+  "validUntilTime": "Válido até: {time}",
+  "@validUntilTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "enableVipGuestList": "Habilitar Lista VIP Guest",
+  "createsVipGuestTicketForQuotas": "Cria ingresso 'Convidado Especial' (Preço: 0) - Para cotas VIP",
+  "eventNotFound": "Evento não encontrado.",
+  "eventSelectedFromDeepLink": "Evento selecionado via deep link.",
+  "couldNotOpenSharedEvent": "Não foi possível abrir o evento compartilhado.",
+  "selectColor": "Selecionar cor",
+  "offlineTicketQueued": "Sem conexão. Ingresso em fila para sincronização automática.",
+  "ticketCreatedEmailFailed": "Ingresso criado, mas o email não pôde ser enviado.",
+  "ticketCreatedEmailError": "Ingresso criado, falha no email: {error}",
+  "@ticketCreatedEmailError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

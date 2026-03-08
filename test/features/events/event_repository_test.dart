@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:imagine_access/features/events/data/event_repository.dart';
+import 'package:imagine_access/core/utils/ttl_cache.dart';
 
 // ─── Mocks ──────────────────────────────────────────────
 class MockSupabaseClient extends Mock implements SupabaseClient {}
@@ -61,6 +62,46 @@ void main() {
           // but this proves the method accepts organizationId
           throwsA(anything),
         );
+      });
+    });
+
+    group('cache behavior', () {
+      test('returns cached events when cache is valid', () async {
+        final cache = InMemoryTtlCacheStore();
+        cache.set<List<Map<String, dynamic>>>(
+          'events::org=org-1::user=null::includeArchived=false',
+          [
+            {'id': 'event-1', 'name': 'Cached Event'}
+          ],
+          ttl: const Duration(minutes: 5),
+        );
+
+        final repo = EventRepository(mockClient, cacheStore: cache);
+        final result = await repo.getEvents(organizationId: 'org-1');
+
+        expect(result, hasLength(1));
+        expect(result.first['name'], equals('Cached Event'));
+        verifyNever(() => mockClient.from(any()));
+      });
+
+      test('returns stale cache when remote fetch fails', () async {
+        final cache = InMemoryTtlCacheStore();
+        cache.set<List<Map<String, dynamic>>>(
+          'events::org=org-2::user=null::includeArchived=false',
+          [
+            {'id': 'event-2', 'name': 'Stale Event'}
+          ],
+          ttl: const Duration(seconds: 1),
+        );
+
+        await Future<void>.delayed(const Duration(seconds: 2));
+        when(() => mockClient.from('events')).thenThrow(Exception('network'));
+
+        final repo = EventRepository(mockClient, cacheStore: cache);
+        final result = await repo.getEvents(organizationId: 'org-2');
+
+        expect(result, hasLength(1));
+        expect(result.first['name'], equals('Stale Event'));
       });
     });
   });

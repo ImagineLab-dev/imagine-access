@@ -1,187 +1,153 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.0.0"
-import { createTransport } from "npm:nodemailer@6.9.7"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import QRCode from "npm:qrcode@1.5.3"
 import { corsHeaders } from "../_shared/cors.ts"
-
-const sendEmail = async (to: string, subject: string, html: string, attachments?: any[]) => {
-    const SMTP_HOST = Deno.env.get("SMTP_HOST") || "smtp.hostinger.com";
-
-    // HARDCODED FIX: Force Port 587 if using Hostinger to bypass block 465
-    // This overrides the '465' setting in Supabase Secrets if present
-    let SMTP_PORT = 587;
-    const envPort = Deno.env.get("SMTP_PORT");
-    if (envPort && envPort !== "465") {
-        SMTP_PORT = parseInt(envPort);
-    }
-
-    const SMTP_USER = Deno.env.get("SMTP_USER") || "automatiza@imaginelab.agency";
-    const SMTP_PASS = Deno.env.get("SMTP_PASS");
-
-    if (!SMTP_PASS) throw new Error("SMTP_PASS is missing in Edge Function secrets");
-
-    console.log(`Configuring SMTP Transport: Host=${SMTP_HOST} Port=${SMTP_PORT} User=${SMTP_USER}`);
-
-    const transporter = createTransport({
-        host: SMTP_HOST,
-        port: SMTP_PORT,
-        secure: false, // STARTTLS requires secure: false
-        auth: { user: SMTP_USER, pass: SMTP_PASS },
-        logger: true,
-        debug: true,
-        connectionTimeout: 10000, // 10s timeout to avoid hanging entirely
-        greetingTimeout: 5000,    // 5s wait for greeting
-        socketTimeout: 10000,     // 10s inactivity
-        tls: {
-            rejectUnauthorized: false
-        }
-    });
-
-    try {
-        await transporter.verify();
-        console.log("SMTP Connection verification success");
-    } catch (verifyError) {
-        console.error("SMTP Verify Error:", verifyError);
-        throw verifyError;
-    }
-
-    await transporter.sendMail({
-        from: `"Imagine Access" <${SMTP_USER}>`,
-        to,
-        subject,
-        html,
-        attachments,
-    });
-};
+import { sendEmail } from "../_shared/email.ts"
 
 serve(async (req) => {
-    if (req.method === 'OPTIONS') {
-        return new Response('ok', { headers: corsHeaders })
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
+  }
+
+  try {
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    )
+
+    // --- JWT Authentication ---
+    const authHeader = req.headers.get("Authorization")
+    if (!authHeader) throw new Error("No authorization header")
+
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(
+      authHeader.replace("Bearer ", "")
+    )
+    if (authError || !user) throw new Error("Unauthorized")
+
+    // Verify caller role (admin or rrpp can resend)
+    let callerRole = user.app_metadata?.role
+    if (!callerRole) {
+      const { data: roleProfile } = await supabaseAdmin
+        .from("users_profile")
+        .select("role")
+        .eq("user_id", user.id)
+        .single()
+      callerRole = roleProfile?.role
+    }
+    if (callerRole !== "admin" && callerRole !== "rrpp") {
+      throw new Error("Forbidden: only Admin or RRPP can resend emails")
     }
 
-    try {
-        const supabaseClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-            { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-        )
+    const body = await req.json().catch(() => ({}))
+    const ticketId = body?.ticket_id as string | undefined
+    const ping = body?.ping === true
 
-        const { ticket_id } = await req.json()
-
-        if (!ticket_id) throw new Error("Missing ticket_id")
-
-        // Get Ticket Details
-        const { data: ticket, error: fetchError } = await supabaseClient
-            .from('tickets')
-            .select('*, events(name, venue, address, city, date)')
-            .eq('id', ticket_id)
-            .single()
-
-        if (fetchError || !ticket) throw new Error("Ticket not found")
-
-        // Get PDF URL
-        let pdfUrl = ticket.pdf_url
-        if (!pdfUrl && ticket.pdf_path) {
-            const { data } = supabaseClient.storage.from('tickets').getPublicUrl(ticket.pdf_path)
-            pdfUrl = data.publicUrl
-        }
-
-        // Fallback for link
-        const linkHtml = pdfUrl
-            ? `<a href="${pdfUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Descargar Entrada PDF</a>`
-            : `<p>Tu entrada digital está adjunta o accesible en la app.</p>`
-
-        // 3. Generate QR Image (Buffer for Deno)
-        const qrBuffer = await QRCode.toBuffer(ticket.qr_token, {
-            margin: 2,
-            scale: 8,
-            type: 'png',
-            color: {
-                dark: '#000000',
-                light: '#ffffff'
-            }
-        });
-
-        const eventName = ticket.events?.name ?? 'el evento';
-
-        const eventDate = new Date(ticket.events?.date);
-        const formattedDate = eventDate.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-        const formattedTime = eventDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-        const eventVenue = ticket.events?.venue ?? 'Lugar por confirmar';
-        const eventAddress = ticket.events?.address ?? '';
-        const eventCity = ticket.events?.city ?? '';
-
-        const emailHtml = `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; overflow: hidden; background-color: #fff;">
-                <div style="background: #000; padding: 25px; text-align: center;">
-                    <h1 style="color: #fff; margin: 0; font-size: 24px; letter-spacing: 2px;">IMAGINE ACCESS</h1>
-                </div>
-                <div style="padding: 40px 30px;">
-                    <h2 style="color: #333; margin-top: 0;">¡Tu entrada está lista!</h2>
-                    <p style="color: #555; font-size: 16px; line-height: 1.5;">Hola ${ticket.buyer_name}, aquí tienes tu entrada para <strong>${eventName}</strong>.</p>
-                    
-                    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 8px; border-left: 4px solid #000;">
-                        <table style="width: 100%; border-collapse: collapse;">
-                            <tr>
-                                <td style="padding: 5px 0; color: #777; font-size: 13px;">TIPO</td>
-                                <td style="padding: 5px 0; color: #777; font-size: 13px;">FECHA Y HORA</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 0 0 15px 0; color: #000; font-weight: bold; font-size: 16px;">${ticket.type.toUpperCase()}</td>
-                                <td style="padding: 0 0 15px 0; color: #000; font-weight: bold; font-size: 16px;">${formattedDate}<br><span style="font-weight: normal; font-size: 14px;">A las ${formattedTime} hs</span></td>
-                            </tr>
-                            <tr>
-                                <td colspan="2" style="padding: 5px 0; color: #777; font-size: 13px;">LUGAR</td>
-                            </tr>
-                            <tr>
-                                <td colspan="2" style="padding:0; color: #000; font-weight: bold; font-size: 16px;">${eventVenue}</td>
-                            </tr>
-                            <tr>
-                                <td colspan="2" style="padding:0; color: #555; font-size: 14px;">${eventAddress}${eventCity ? `, ${eventCity}` : ''}</td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <div style="text-align: center; padding: 20px; background: #fff; margin: 30px 0; border: 1px dashed #ccc; border-radius: 12px;">
-                        <img src="cid:ticket-qr.png" alt="QR Access" style="width: 250px; height: 250px;" />
-                        <p style="color: #000; font-weight: bold; font-size: 14px; margin-top: 15px; letter-spacing: 1px;">MUESTRA ESTE CÓDIGO AL INGRESAR</p>
-                    </div>
-
-                    <div style="background-color: #000; color: #fff; padding: 15px; border-radius: 8px; text-align: center; font-size: 12px;">
-                        ID TICKET: ${ticket.id}
-                    </div>
-                </div>
-                <div style="background-color: #f4f4f4; padding: 20px; text-align: center; color: #999; font-size: 12px;">
-                    © ${new Date().getFullYear()} Imagine Access. Todos los derechos reservados.
-                </div>
-            </div>
-        `;
-
-        try {
-            await sendEmail(ticket.buyer_email, `Tu Entrada para ${eventName}`, emailHtml, [
-                {
-                    filename: 'ticket-qr.png',
-                    content: qrBuffer,
-                    cid: 'qrcode',
-                    contentType: 'image/png'
-                }
-            ]);
-            await supabaseClient.from('tickets').update({ email_sent_at: new Date().toISOString() }).eq('id', ticket_id)
-        } catch (e) {
-            console.error("Failed to resend email:", e);
-            throw e; // We want to know if resend fails explicitly
-        }
-
-        return new Response(
-            JSON.stringify({ message: "Email resent successfully" }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
-        )
-
-    } catch (error) {
-        return new Response(
-            JSON.stringify({ error: error.message }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
-        )
+    if (ping) {
+      return new Response(
+        JSON.stringify({ message: "pong", status: "ok" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      )
     }
+
+    if (!ticketId) {
+      throw new Error("Missing ticket_id")
+    }
+
+    const { data: ticket, error: ticketError } = await supabaseAdmin
+      .from("tickets")
+      .select("id, buyer_name, buyer_email, type, qr_token, event_id, events(name, date, venue, address, city, organization_id)")
+      .eq("id", ticketId)
+      .single()
+
+    if (ticketError || !ticket) {
+      throw new Error("Ticket not found")
+    }
+
+    // --- Organization verification ---
+    let callerOrgId = user.user_metadata?.organization_id
+    if (!callerOrgId) {
+      const { data: profile } = await supabaseAdmin
+        .from("users_profile")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .single()
+      callerOrgId = profile?.organization_id
+    }
+    if (callerOrgId && ticket.events?.organization_id && ticket.events.organization_id !== callerOrgId) {
+      throw new Error("Ticket does not belong to your organization")
+    }
+
+    const eventName = ticket.events?.name ?? "tu evento"
+    const eventDate = ticket.events?.date ? new Date(ticket.events.date) : null
+    const dateLabel = eventDate && !Number.isNaN(eventDate.getTime())
+      ? eventDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+      : "Fecha por confirmar"
+    const timeLabel = eventDate && !Number.isNaN(eventDate.getTime())
+      ? eventDate.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+      : "Horario por confirmar"
+    const venueLabel = ticket.events?.venue ?? "Lugar por confirmar"
+    const addressLabel = ticket.events?.address ?? ""
+    const cityLabel = ticket.events?.city ?? ""
+
+    let qrBuffer: Uint8Array | null = null
+    if (ticket.qr_token) {
+      try {
+        qrBuffer = await QRCode.toBuffer(ticket.qr_token, {
+          margin: 2,
+          scale: 8,
+          type: "png",
+          color: { dark: "#000000", light: "#ffffff" },
+        })
+      } catch (_error) {
+        qrBuffer = null
+      }
+    }
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
+        <h2 style="margin:0 0 12px 0;">Tu ticket fue reenviado</h2>
+        <p>Hola ${ticket.buyer_name ?? "invitado"},</p>
+        <p>Reenviamos tu entrada para <strong>${eventName}</strong>.</p>
+        <p><strong>Tipo de entrada:</strong> ${(ticket.type ?? "").toString().toUpperCase()}</p>
+        <p><strong>Fecha:</strong> ${dateLabel}</p>
+        <p><strong>Hora:</strong> ${timeLabel}</p>
+        <p><strong>Lugar:</strong> ${venueLabel}</p>
+        <p><strong>Dirección:</strong> ${addressLabel}${cityLabel ? `, ${cityLabel}` : ""}</p>
+        <div style="margin-top:16px;padding:16px;border:1px dashed #d1d5db;border-radius:10px;text-align:center;">
+          ${qrBuffer
+        ? '<img src="cid:ticket-qr.png" alt="QR Ticket" style="width:220px;height:220px;" />'
+        : '<p style="margin:0;color:#6b7280;">No se pudo adjuntar el QR en este envío.</p>'}
+          <p style="margin:10px 0 0 0;font-size:12px;color:#374151;">Presenta este QR al ingresar.</p>
+        </div>
+        <p style="margin-top:18px;color:#6b7280;font-size:12px;">ID Ticket: ${ticket.id}</p>
+      </div>
+    `
+
+    const attachments = qrBuffer
+      ? [{
+        filename: "ticket-qr.png",
+        content: qrBuffer,
+        cid: "ticket-qr.png",
+        contentType: "image/png",
+      }]
+      : []
+
+    await sendEmail(ticket.buyer_email, `Reenvío de entrada - ${eventName}`, html, attachments)
+
+    await supabaseAdmin
+      .from("tickets")
+      .update({ email_sent_at: new Date().toISOString() })
+      .eq("id", ticketId)
+
+    return new Response(
+      JSON.stringify({ message: "Email resent successfully" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected error"
+    return new Response(
+      JSON.stringify({ error: message }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+    )
+  }
 })
-

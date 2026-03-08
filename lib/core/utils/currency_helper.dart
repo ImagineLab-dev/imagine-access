@@ -1,34 +1,47 @@
 import 'package:flutter/material.dart';
 
 class CurrencyHelper {
+  /// All supported currencies with display info
+  static const Map<String, CurrencyInfo> currencies = {
+    'PYG': CurrencyInfo('Gs', 'Guaraní (PYG)', 0, Icons.payments_outlined),
+    'USD': CurrencyInfo('\$', 'Dólar (USD)', 2, Icons.attach_money),
+    'ARS': CurrencyInfo('\$', 'Peso Argentino (ARS)', 2, Icons.attach_money),
+    'CLP': CurrencyInfo('\$', 'Peso Chileno (CLP)', 0, Icons.attach_money),
+    'COP': CurrencyInfo('\$', 'Peso Colombiano (COP)', 0, Icons.attach_money),
+    'PEN': CurrencyInfo('S/', 'Sol Peruano (PEN)', 2, Icons.money),
+    'UYU': CurrencyInfo('\$U', 'Peso Uruguayo (UYU)', 2, Icons.attach_money),
+    'BOB': CurrencyInfo('Bs', 'Boliviano (BOB)', 2, Icons.money),
+    'VES': CurrencyInfo('Bs.D', 'Bolívar (VES)', 2, Icons.money),
+    'BRL': CurrencyInfo('R\$', 'Real (BRL)', 2, Icons.attach_money),
+  };
+
   static String getSymbol(String currencyCode) {
-    switch (currencyCode.toUpperCase()) {
-      case 'USD':
-        return '\$';
-      case 'PYG':
-        return 'Gs';
-      default:
-        return currencyCode;
-    }
+    return currencies[currencyCode.toUpperCase()]?.symbol ?? currencyCode;
   }
 
   static String format(num amount, String currencyCode) {
-    final symbol = getSymbol(currencyCode);
-    if (currencyCode.toUpperCase() == 'PYG') {
-      // PYG usually doesn't use decimals in common displays
-      return '$symbol ${amount.toStringAsFixed(0)}';
-    }
-    return '$symbol${amount.toStringAsFixed(2)}';
+    final info = currencies[currencyCode.toUpperCase()];
+    final symbol = info?.symbol ?? currencyCode;
+    final decimals = info?.decimals ?? 2;
+    final space = currencyCode.toUpperCase() == 'PYG' ? ' ' : '';
+    return '$symbol$space${amount.toStringAsFixed(decimals)}';
   }
 
   static IconData getIcon(String currencyCode) {
-    switch (currencyCode.toUpperCase()) {
-      case 'USD':
-        return Icons.attach_money;
-      case 'PYG':
-        return Icons.payments_outlined;
-      default:
-        return Icons.money;
-    }
+    return currencies[currencyCode.toUpperCase()]?.icon ?? Icons.money;
   }
+
+  /// Get label for dropdown menus
+  static String getLabel(String currencyCode) {
+    return currencies[currencyCode.toUpperCase()]?.label ?? currencyCode;
+  }
+}
+
+class CurrencyInfo {
+  final String symbol;
+  final String label;
+  final int decimals;
+  final IconData icon;
+
+  const CurrencyInfo(this.symbol, this.label, this.decimals, this.icon);
 }

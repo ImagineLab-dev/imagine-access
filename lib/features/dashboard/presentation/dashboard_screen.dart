@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/ui/glass_scaffold.dart';
@@ -78,13 +78,13 @@ class DashboardScreen extends ConsumerWidget {
                     context.push('/events');
                   },
                   backgroundColor: selectedEvent != null
-                      ? theme.colorScheme.primary.withOpacity(0.1)
+                      ? theme.colorScheme.primary.withValues(alpha: 0.1)
                       : (isDark
                           ? Colors.white10
-                          : Colors.black.withOpacity(0.05)),
+                          : Colors.black.withValues(alpha: 0.05)),
                   side: BorderSide(
                     color: selectedEvent != null
-                        ? theme.colorScheme.primary.withOpacity(0.5)
+                        ? theme.colorScheme.primary.withValues(alpha: 0.5)
                         : (isDark ? Colors.white24 : Colors.black12),
                   ),
                 );
@@ -162,6 +162,9 @@ class DashboardScreen extends ConsumerWidget {
 
   Widget _buildDrawer(BuildContext context, WidgetRef ref, bool isDark) {
     final l10n = AppLocalizations.of(context)!;
+    final role = ref.watch(userRoleProvider);
+    final isDevice = ref.watch(deviceProvider) != null;
+    final isDoor = isDevice || role == AppRoles.door;
 
     return Drawer(
       backgroundColor: isDark ? const Color(0xFF0B1220) : Colors.white,
@@ -169,7 +172,7 @@ class DashboardScreen extends ConsumerWidget {
         children: [
           DrawerHeader(
             decoration:
-                BoxDecoration(color: AppTheme.neonBlue.withOpacity(0.1)),
+                BoxDecoration(color: AppTheme.neonBlue.withValues(alpha: 0.1)),
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -205,28 +208,30 @@ class DashboardScreen extends ConsumerWidget {
                     TextStyle(color: isDark ? Colors.white : Colors.black87)),
             onTap: () => context.pop(),
           ),
-          ListTile(
-            leading: Icon(Icons.event,
-                color: isDark ? Colors.white70 : Colors.black87),
-            title: Text(l10n.events,
-                style:
-                    TextStyle(color: isDark ? Colors.white : Colors.black87)),
-            onTap: () {
-              context.pop();
-              context.push('/events');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.settings,
-                color: isDark ? Colors.white70 : Colors.black87),
-            title: Text(l10n.settings,
-                style:
-                    TextStyle(color: isDark ? Colors.white : Colors.black87)),
-            onTap: () {
-              context.pop();
-              context.push('/settings');
-            },
-          ),
+          if (!isDoor) ...[
+            ListTile(
+              leading: Icon(Icons.event,
+                  color: isDark ? Colors.white70 : Colors.black87),
+              title: Text(l10n.events,
+                  style:
+                      TextStyle(color: isDark ? Colors.white : Colors.black87)),
+              onTap: () {
+                context.pop();
+                context.push('/events');
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.settings,
+                  color: isDark ? Colors.white70 : Colors.black87),
+              title: Text(l10n.settings,
+                  style:
+                      TextStyle(color: isDark ? Colors.white : Colors.black87)),
+              onTap: () {
+                context.pop();
+                context.push('/settings');
+              },
+            ),
+          ],
           const Spacer(),
           const Divider(),
           ListTile(
@@ -236,7 +241,7 @@ class DashboardScreen extends ConsumerWidget {
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
             onTap: () async {
               await ref.read(authControllerProvider.notifier).logout();
-              if (context.mounted) context.go('/login');
+              if (context.mounted) context.go('/welcome');
             },
           ),
           const SizedBox(height: 16),
@@ -264,7 +269,7 @@ class _ErrorView extends StatelessWidget {
           const SizedBox(height: 8),
           Text(l10n.error),
           Text(error, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-          TextButton(onPressed: onRetry, child: const Text("REINTENTAR")),
+          TextButton(onPressed: onRetry, child: Text(l10n.retry)),
         ],
       ),
     );
@@ -278,9 +283,11 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.all(8.0),
-      child: Text("ERROR: $message", style: const TextStyle(color: Colors.red)),
+      child: Text('${l10n.error}: $message',
+          style: const TextStyle(color: Colors.red)),
     );
   }
 }

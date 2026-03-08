@@ -2,6 +2,7 @@ import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/constants/app_roles.dart';
 
 // State classes
@@ -86,12 +87,13 @@ class DeviceNotifier extends StateNotifier<DeviceSession?> {
   static const String _deviceIdKey = 'auth_device_id';
   static const String _deviceAliasKey = 'auth_device_alias';
   static const String _devicePinKey = 'auth_device_pin';
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   Future<void> _loadSession() async {
     final prefs = await SharedPreferences.getInstance();
     final id = prefs.getString(_deviceIdKey);
     final alias = prefs.getString(_deviceAliasKey);
-    final pin = prefs.getString(_devicePinKey);
+    final pin = await _secureStorage.read(key: _devicePinKey);
     if (id != null && alias != null && pin != null) {
       state = DeviceSession(deviceId: id, alias: alias, pin: pin);
     }
@@ -102,7 +104,8 @@ class DeviceNotifier extends StateNotifier<DeviceSession?> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_deviceIdKey, deviceId);
     await prefs.setString(_deviceAliasKey, alias);
-    await prefs.setString(_devicePinKey, pin);
+    await _secureStorage.write(key: _devicePinKey, value: pin);
+    await prefs.remove(_devicePinKey);
   }
 
   Future<void> clearSession() async {
@@ -111,6 +114,7 @@ class DeviceNotifier extends StateNotifier<DeviceSession?> {
     await prefs.remove(_deviceIdKey);
     await prefs.remove(_deviceAliasKey);
     await prefs.remove(_devicePinKey);
+    await _secureStorage.delete(key: _devicePinKey);
   }
 }
 
@@ -127,15 +131,131 @@ final userRoleProvider = Provider<String>((ref) {
 
 // Organization ID from metadata (for API calls)
 final organizationIdProvider = Provider<String?>((ref) {
+  final cachedOrg = ref.watch(userOrganizationProvider);
+  if (cachedOrg != null && cachedOrg.id.isNotEmpty) {
+    return cachedOrg.id;
+  }
+
   final user = ref.watch(userProvider);
-  if (user == null) return null;
-  return user.appMetadata['organization_id'] as String?;
+  final metadataOrgId = user?.appMetadata['organization_id'] as String?;
+  if (metadataOrgId != null && metadataOrgId.isNotEmpty) {
+    return metadataOrgId;
+  }
+
+  return null;
 });
 
 // Auth Logic
 class AuthController extends StateNotifier<bool> {
   AuthController(this.ref) : super(false);
   final Ref ref;
+
+  Future<String> ensureOrganizationReady() async {
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+
+    if (user == null) {
+      throw const AuthException('No authenticated user');
+    }
+
+    String? orgId = user.appMetadata['organization_id'] as String?;
+    final cachedOrg = ref.read(userOrganizationProvider);
+    orgId ??= cachedOrg?.id;
+
+    if (orgId != null && orgId.isNotEmpty) {
+      Map<String, dynamic>? existing;
+      try {
+        existing = await client
+            .from('organizations')
+            .select('id, name, slug')
+            .eq('id', orgId)
+            .maybeSingle();
+      } on PostgrestException catch (e) {
+        final isJwtError = e.code == 'PGRST301' ||
+            e.message.toLowerCase().contains('jwt') ||
+            e.message.toLowerCase().contains('unauthorized');
+        if (!isJwtError) rethrow;
+
+        final refreshed = await client.auth.refreshSession();
+        if (refreshed.session == null) {
+          throw const AuthException('Session expired. Please log in again.');
+        }
+
+        ref.read(userProvider.notifier).state = refreshed.user;
+        existing = await client
+            .from('organizations')
+            .select('id, name, slug')
+            .eq('id', orgId)
+            .maybeSingle();
+      }
+
+      if (existing != null) {
+        final org = Map<String, dynamic>.from(existing);
+        await ref.read(userOrganizationProvider.notifier).setOrganization(
+              org['id'] as String,
+              (org['name'] as String?) ?? 'Organization',
+              (org['slug'] as String?) ?? 'org',
+            );
+        return orgId;
+      }
+    }
+
+    final displayName = (user.userMetadata?['display_name'] as String?) ??
+        user.email?.split('@').first ??
+        'User';
+
+    Future<FunctionResponse> invokeEnsureProfile() {
+      return client.functions.invoke(
+        'ensure_profile',
+        body: {
+          'user_id': user.id,
+          'email': user.email,
+          'display_name': displayName,
+          'organization_name': cachedOrg?.name,
+        },
+      );
+    }
+
+    FunctionResponse result;
+    try {
+      result = await invokeEnsureProfile();
+    } on FunctionException catch (e) {
+      final details = (e.details ?? '').toString().toLowerCase();
+      final isJwtError = e.status == 401 ||
+          details.contains('invalid jwt') ||
+          details.contains('unauthorized');
+
+      if (!isJwtError) rethrow;
+
+      final refreshed = await client.auth.refreshSession();
+      if (refreshed.session == null) {
+        throw const AuthException('Session expired. Please log in again.');
+      }
+
+      ref.read(userProvider.notifier).state = refreshed.user;
+      result = await invokeEnsureProfile();
+    }
+
+    if (result.status != 200) {
+      throw const AuthException('Could not initialize organization');
+    }
+
+    final data = Map<String, dynamic>.from(result.data as Map);
+    final org = Map<String, dynamic>.from(data['organization'] as Map);
+
+    await ref.read(userOrganizationProvider.notifier).setOrganization(
+          org['id'] as String,
+          org['name'] as String,
+          org['slug'] as String,
+        );
+
+    final refreshed = await client.auth.refreshSession();
+    if (refreshed.user != null) {
+      ref.read(userProvider.notifier).state = refreshed.user;
+    }
+
+    return org['id'] as String;
+  }
 
   // 1. Admin/RRPP Login (Supabase Auth)
   Future<void> loginEmail(String email, String password) async {

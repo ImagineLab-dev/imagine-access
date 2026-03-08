@@ -1,28 +1,96 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/presentation/auth_controller.dart';
+import '../../../core/utils/ttl_cache.dart';
 
 class EventRepository {
   final SupabaseClient _client;
+  final TtlCacheStore _cacheStore;
 
-  EventRepository(this._client);
+  EventRepository(this._client, {TtlCacheStore? cacheStore})
+      : _cacheStore = cacheStore ?? InMemoryTtlCacheStore();
+
+  String? _safeCurrentUserId() {
+    try {
+      return _client.auth.currentUser?.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  User? _safeCurrentUser() {
+    try {
+      return _client.auth.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<List<Map<String, dynamic>>> getEvents(
       {bool includeArchived = false, String? organizationId}) async {
-    // SECURITY: If no organizationId, return empty to prevent cross-tenant leak
-    if (organizationId == null) return [];
+    final currentUserId = _safeCurrentUserId();
 
-    var query = _client.from('events').select('*, ticket_types(*)');
-
-    if (!includeArchived) {
-      query = query.eq('is_archived', false);
+    String? resolvedOrganizationId = organizationId;
+    if ((resolvedOrganizationId == null || resolvedOrganizationId.isEmpty) &&
+        currentUserId != null) {
+      try {
+        final profile = await _client
+            .from('users_profile')
+            .select('organization_id')
+            .eq('user_id', currentUserId)
+            .maybeSingle();
+        resolvedOrganizationId = profile?['organization_id'] as String?;
+      } catch (_) {
+        // Keep legacy fallback to created_by when profile lookup fails.
+      }
     }
 
-    query = query.eq('organization_id', organizationId);
+    // SECURITY: no org and no user context means no access scope
+    if ((resolvedOrganizationId == null || resolvedOrganizationId.isEmpty) &&
+        currentUserId == null) {
+      return [];
+    }
 
-    final response = await query.order('date', ascending: true);
+    final cacheKey =
+      'events::org=$resolvedOrganizationId::user=$currentUserId::includeArchived=$includeArchived';
+    final cached = _cacheStore.get<List<Map<String, dynamic>>>(cacheKey);
+    if (cached != null && cached.isValidAt(DateTime.now())) {
+      return cached.value;
+    }
 
-    return List<Map<String, dynamic>>.from(response);
+    try {
+      var query = _client.from('events').select('*, ticket_types(*)');
+
+      if (!includeArchived) {
+        query = query.eq('is_archived', false);
+      }
+
+      if (resolvedOrganizationId != null &&
+          resolvedOrganizationId.isNotEmpty &&
+          currentUserId != null) {
+        query = query
+            .or('organization_id.eq.$resolvedOrganizationId,created_by.eq.$currentUserId');
+      } else if (resolvedOrganizationId != null &&
+          resolvedOrganizationId.isNotEmpty) {
+        query = query.eq('organization_id', resolvedOrganizationId);
+      } else if (currentUserId != null) {
+        query = query.eq('created_by', currentUserId);
+      }
+
+      final response = await query.order('date', ascending: true);
+      final mapped = List<Map<String, dynamic>>.from(response);
+      _cacheStore.set<List<Map<String, dynamic>>>(
+        cacheKey,
+        mapped,
+        ttl: const Duration(minutes: 5),
+      );
+      return mapped;
+    } catch (_) {
+      if (cached != null) {
+        return cached.value;
+      }
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> createEvent({
@@ -35,6 +103,32 @@ class EventRepository {
     required String currency,
     String? organizationId,
   }) async {
+    final currentUser = _safeCurrentUser();
+    final metadataOrgId = currentUser?.appMetadata['organization_id'] as String?;
+    final metadataUserOrgId =
+        currentUser?.userMetadata?['organization_id'] as String?;
+    String? resolvedOrganizationId =
+        organizationId ?? metadataOrgId ?? metadataUserOrgId;
+
+    if ((resolvedOrganizationId == null || resolvedOrganizationId.isEmpty) &&
+        currentUser != null) {
+      try {
+        final profile = await _client
+            .from('users_profile')
+            .select('organization_id')
+            .eq('user_id', currentUser.id)
+            .maybeSingle();
+        resolvedOrganizationId = profile?['organization_id'] as String?;
+      } catch (_) {
+        // Error handled by final validation below.
+      }
+    }
+
+    if (resolvedOrganizationId == null || resolvedOrganizationId.isEmpty) {
+      throw Exception(
+          'No organization found for current user. Please sign in again.');
+    }
+
     final insertData = {
       'name': name,
       'venue': venue,
@@ -45,7 +139,8 @@ class EventRepository {
       'currency': currency,
       'is_active': true,
       'is_archived': false,
-      if (organizationId != null) 'organization_id': organizationId,
+      'organization_id': resolvedOrganizationId,
+      if (currentUser != null) 'created_by': currentUser.id,
     };
 
     final response =

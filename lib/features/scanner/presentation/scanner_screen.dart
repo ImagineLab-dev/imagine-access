@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +13,8 @@ import '../../../core/utils/device_id_service.dart';
 import '../../../core/ui/loading_overlay.dart';
 import 'package:imagine_access/features/tickets/presentation/ticket_list_screen.dart';
 import 'package:imagine_access/features/dashboard/data/dashboard_repository.dart';
+import '../../auth/presentation/auth_controller.dart';
+import '../../../core/offline/offline_queue_service.dart';
 
 class ScannerScreen extends ConsumerStatefulWidget {
   const ScannerScreen({super.key});
@@ -75,7 +77,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
 
     try {
       ref.read(loadingProvider.notifier).state = true;
-      final deviceId = await ref.read(deviceIdProvider.future);
+      final session = ref.read(deviceProvider);
+      final fallbackDeviceId = await ref.read(deviceIdProvider.future);
+      final deviceId = session?.deviceId ?? fallbackDeviceId;
       final selectedEvent = ref.read(selectedEventProvider);
 
       if (selectedEvent == null) {
@@ -113,8 +117,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
     } catch (e) {
       if (mounted) {
         setState(() => _isProcessing = false);
+        final message =
+            e is OfflineQueuedException ? e.message : l10n.errorWithDetail(e.toString());
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+            .showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) ref.read(loadingProvider.notifier).state = false;
@@ -182,7 +188,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
             height: 280,
             decoration: BoxDecoration(
                 border: Border.all(
-                    color: AppTheme.primaryColor.withOpacity(0.5), width: 2),
+                color: AppTheme.primaryColor.withValues(alpha: 0.5), width: 2),
                 borderRadius: BorderRadius.circular(24)),
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -284,10 +290,15 @@ class _ResultOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final allowed = scanResult['allowed'] as bool;
+    final allowed = (scanResult['allowed'] as bool?) ??
+      (scanResult['success'] as bool?) ??
+      false;
     final color = allowed ? AppTheme.accentGreen : AppTheme.errorColor;
     final icon = allowed ? Icons.check_circle : Icons.cancel;
     final ticket = scanResult['ticket'];
+    final titleText = scanResult['message']?.toString() ??
+      (allowed ? l10n.accessGranted : l10n.accessDenied);
+    final resultCode = scanResult['result']?.toString();
 
     return Scaffold(
       backgroundColor: color, // Full screen color flood
@@ -304,7 +315,7 @@ class _ResultOverlay extends StatelessWidget {
                         .animate()
                         .scale(duration: 300.ms, curve: Curves.elasticOut),
                     const SizedBox(height: 30),
-                    Text(scanResult['message'].toString().toUpperCase(),
+                    Text(titleText.toUpperCase(),
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                                 color: Colors.white,
@@ -332,7 +343,7 @@ class _ResultOverlay extends StatelessWidget {
                           ]),
                       child: Column(
                         children: [
-                          Text(ticket['buyer_name'],
+                            Text((ticket?['buyer_name'] ?? '-').toString(),
                               style: const TextStyle(
                                   color: Colors.black,
                                   fontSize: 24,
@@ -342,21 +353,20 @@ class _ResultOverlay extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                                color: color.withOpacity(0.1),
+                              color: color.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(10)),
-                            child: Text(ticket['type'],
+                            child: Text((ticket?['type'] ?? '-').toString(),
                                 style: TextStyle(
                                     color: color,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16)),
                           ),
-                          if (!allowed &&
-                              scanResult['result'] == 'already_used') ...[
+                            if (!allowed && resultCode == 'already_used') ...[
                             const Divider(height: 32),
                             Text(l10n.firstEntry,
                                 style: const TextStyle(
                                     color: Colors.grey, fontSize: 12)),
-                            Text(ticket['scanned_at'] ?? 'Unknown',
+                            Text((ticket?['scanned_at'] ?? l10n.unknown).toString(),
                                 style: const TextStyle(
                                     color: Colors.black,
                                     fontWeight: FontWeight.bold,
@@ -375,7 +385,7 @@ class _ResultOverlay extends StatelessWidget {
                 child: Center(
                   child: Text(l10n.tapToDismiss,
                           style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                               letterSpacing: 2))
                       .animate(onPlay: (c) => c.repeat(reverse: true))
                       .fade(begin: 0.5, end: 1),

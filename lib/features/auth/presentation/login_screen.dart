@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,10 +11,15 @@ import '../../../core/ui/neon_button.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/utils/error_handler.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  final int initialTabIndex;
+
+  const LoginScreen({
+    super.key,
+    this.initialTabIndex = 0,
+  });
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -43,7 +47,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final initialIndex = widget.initialTabIndex.clamp(0, 1);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: initialIndex,
+    );
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {}); // Rebuild to switch tab content
@@ -66,9 +75,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   bool _isLockedOut() {
     if (_lockoutEnd != null && DateTime.now().isBefore(_lockoutEnd!)) {
       final remaining = _lockoutEnd!.difference(DateTime.now()).inSeconds;
+      final l10n = AppLocalizations.of(context)!;
       ErrorHandler.showErrorSnackBar(
         context,
-        'Demasiados intentos. Espere ${remaining}s.',
+        l10n.lockoutWaitSeconds(remaining),
       );
       return true;
     }
@@ -119,21 +129,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (!_formKeyDevice.currentState!.validate()) return;
     if (_isLockedOut()) return;
 
-    // TEMP: Bypass login para testing (ONLY in debug mode)
-    if (kDebugMode &&
-        _deviceIdController.text == 'test' &&
-        _pinController.text == '1234') {
-      // Crear sesión de dispositivo simulada
-      await ref
-          .read(deviceProvider.notifier)
-          .setSession('test-device', 'test', '1234');
-      if (mounted) {
-        ErrorHandler.showSuccessSnackBar(context, 'Login exitoso (modo test)');
-        context.go('/dashboard');
-      }
-      return;
-    }
-
     try {
       await ref.read(authControllerProvider.notifier).loginDevice(
             _deviceIdController.text.trim(),
@@ -143,9 +138,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     } catch (e) {
       _registerFailedAttempt();
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ErrorHandler.showErrorSnackBar(
           context,
-          'Credenciales inválidas. Usa test/1234 para pruebas.',
+          l10n.invalidCredentials,
           onRetry: _loginDevice,
         );
       }
@@ -194,8 +190,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
                           color: isDark
-                              ? Colors.white.withOpacity(0.05)
-                              : Colors.black.withOpacity(0.05),
+                              ? Colors.white.withValues(alpha: 0.05)
+                              : Colors.black.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: TabBar(
@@ -205,7 +201,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             borderRadius: BorderRadius.circular(16),
                           ),
                           labelColor: Colors.white,
-                          unselectedLabelColor: textColor.withOpacity(0.6),
+                            unselectedLabelColor:
+                              textColor.withValues(alpha: 0.6),
                           labelStyle: const TextStyle(
                               fontWeight: FontWeight.w600,
                               fontFamily: 'Inter',
@@ -213,7 +210,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           dividerColor: Colors.transparent,
                           indicatorSize: TabBarIndicatorSize.tab,
                           overlayColor:
-                              MaterialStateProperty.all(Colors.transparent),
+                              WidgetStateProperty.all(Colors.transparent),
                           tabs: [
                             Tab(text: l10n.adminRRPP),
                             Tab(text: l10n.doorAccess),
@@ -240,12 +237,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                       ),
                                       const SizedBox(height: 12),
                                       CustomInput(
-                                        label: 'Nombre de la Empresa',
+                                        label: l10n.companyName,
                                         controller: _orgController,
                                         prefixIcon: Icons.business_outlined,
                                         validator: (v) => v?.isNotEmpty == true
                                             ? null
-                                            : 'Ingrese el nombre de su empresa',
+                                            : l10n.enterCompanyName,
                                       ),
                                       const SizedBox(height: 12),
                                     ],
@@ -258,9 +255,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                           return l10n.required;
                                         }
                                         final emailRegex = RegExp(
-                                            r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$');
+                                            r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,}$');
                                         if (!emailRegex.hasMatch(v)) {
-                                          return 'Email inválido';
+                                          return l10n.invalidEmail;
                                         }
                                         return null;
                                       },
@@ -276,7 +273,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                           return l10n.required;
                                         }
                                         if (_isRegistering && v!.length < 6) {
-                                          return 'La contraseña debe tener al menos 6 caracteres';
+                                          return l10n.passwordMinLength;
                                         }
                                         return null;
                                       },
@@ -299,7 +296,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                             ? l10n.alreadyHaveAccount
                                             : l10n.doNotHaveAccount,
                                         style: TextStyle(
-                                            color: textColor.withOpacity(0.7),
+                                            color: textColor.withValues(
+                                              alpha: 0.7,
+                                            ),
                                             fontSize: 13),
                                       ),
                                     ),
@@ -347,7 +346,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           Icon(Icons.wb_sunny_rounded,
                               size: 18,
                               color: isDark
-                                  ? textColor.withOpacity(0.3)
+                                  ? textColor.withValues(alpha: 0.3)
                                   : AppTheme.accentOrange),
                           const SizedBox(width: 12),
                           Switch(
@@ -358,19 +357,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                   .read(themeNotifierProvider.notifier)
                                   .toggleTheme();
                             },
-                            activeColor: AppTheme.accentBlue,
+                            activeThumbColor: AppTheme.accentBlue,
                             activeTrackColor:
-                                AppTheme.accentBlue.withOpacity(0.2),
+                                AppTheme.accentBlue.withValues(alpha: 0.2),
                             inactiveThumbColor: AppTheme.accentOrange,
                             inactiveTrackColor:
-                                AppTheme.accentOrange.withOpacity(0.2),
+                                AppTheme.accentOrange.withValues(alpha: 0.2),
                           ),
                           const SizedBox(width: 12),
                           Icon(Icons.nightlight_round,
                               size: 18,
                               color: isDark
                                   ? AppTheme.accentBlue
-                                  : textColor.withOpacity(0.3)),
+                                  : textColor.withValues(alpha: 0.3)),
                         ],
                       ).animate().fade(delay: 200.ms),
                     ],

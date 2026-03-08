@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/glass_card.dart';
 import '../../../core/ui/custom_input.dart';
@@ -63,16 +63,17 @@ class _TicketTypesWidgetState extends State<TicketTypesWidget> {
   void _updateColor(int index, Color color) {
     setState(() {
       _types[index]['color'] =
-          '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
+          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
     });
     widget.onChanged(_types);
   }
 
   void _showColorPicker(int index) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Select Color"),
+        title: Text(l10n.selectColor),
         content: Wrap(
           spacing: 12,
           runSpacing: 12,
@@ -89,12 +90,12 @@ class _TicketTypesWidgetState extends State<TicketTypesWidget> {
                     color: color,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       width: 2,
                     ),
                     boxShadow: [
                       BoxShadow(
-                          color: color.withOpacity(0.4),
+                          color: color.withValues(alpha: 0.4),
                           blurRadius: 8,
                           offset: const Offset(0, 2))
                     ]),
@@ -179,7 +180,7 @@ class _TicketTypesWidgetState extends State<TicketTypesWidget> {
                                   Border.all(color: Colors.white24, width: 1.5),
                               boxShadow: [
                                 BoxShadow(
-                                    color: typeColor.withOpacity(0.5),
+                                  color: typeColor.withValues(alpha: 0.5),
                                     blurRadius: 4)
                               ]),
                         ),
