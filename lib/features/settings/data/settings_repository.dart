@@ -1,37 +1,59 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
+import 'dart:math';
 import 'dart:developer' as dev;
+import 'package:crypto/crypto.dart';
 import '../../auth/presentation/auth_controller.dart';
+import '../../../core/utils/error_handler.dart';
+import '../../../core/utils/ttl_cache.dart';
 
 class SettingsRepository {
   final SupabaseClient _client;
   final Ref _ref;
+  final TtlCacheStore _cacheStore;
 
-  SettingsRepository(this._client, this._ref);
+  SettingsRepository(this._client, this._ref, {TtlCacheStore? cacheStore})
+      : _cacheStore = cacheStore ?? InMemoryTtlCacheStore();
 
-  // --- APP SETTINGS ---
+  // --- APP SETTINGS (scoped per organization) ---
+
+  String? _currentOrgId() {
+    return _ref.read(organizationIdProvider);
+  }
 
   Future<String> getDefaultCurrency() async {
+    final orgId = _currentOrgId();
     try {
-      final response = await _client
+      var query = _client
           .from('app_settings')
           .select('setting_value')
-          .eq('setting_key', 'default_currency')
-          .maybeSingle();
+          .eq('setting_key', 'default_currency');
+
+      if (orgId != null && orgId.isNotEmpty) {
+        query = query.eq('organization_id', orgId);
+      }
+
+      final response = await query.maybeSingle();
       return response?['setting_value'] as String? ?? 'PYG';
     } catch (e) {
       dev.log('Error fetching default currency',
           error: e, name: 'SettingsRepository');
-      return 'PYG'; // Fallback for stability, but logged
+      return 'PYG';
     }
   }
 
   Future<void> updateDefaultCurrency(String currency) async {
+    final orgId = _currentOrgId();
     try {
-      await _client.from('app_settings').upsert({
+      final data = <String, dynamic>{
         'setting_key': 'default_currency',
         'setting_value': currency,
-      });
+      };
+      if (orgId != null && orgId.isNotEmpty) {
+        data['organization_id'] = orgId;
+      }
+      await _client.from('app_settings').upsert(data);
     } on PostgrestException catch (e) {
       dev.log('Failed to update currency',
           error: e, name: 'SettingsRepository');
@@ -46,23 +68,35 @@ class SettingsRepository {
   // --- USER MANAGEMENT (Profiles) ---
 
   Future<List<Map<String, dynamic>>> getUsers() async {
+    const cacheKey = 'settings:users';
+    final cached = _cacheStore.get<List<Map<String, dynamic>>>(cacheKey);
+    if (cached != null && cached.isValidAt(DateTime.now())) {
+      return cached.value;
+    }
+
     try {
+      dev.log('SettingsRepository: Fetching users via get_team_members...', name: 'SettingsRepository');
       // Use Edge Function 'get_team_members' to bypass RLS policies
       // which block 'select' access for standard users.
       final response = await _client.functions.invoke('get_team_members');
 
+      dev.log('get_team_members response status: ${response.status}', name: 'SettingsRepository');
+      
       if (response.status != 200) {
-        throw Exception('Error fetching members: ${response.status}');
+        throw Exception('Error fetching members: ${response.status} - Data: ${response.data}');
       }
 
       // The response.data should be the list
       final List<dynamic> data = response.data;
-      return List<Map<String, dynamic>>.from(data);
+      dev.log('get_team_members fetched ${data.length} users successfully.', name: 'SettingsRepository');
+      final mapped = List<Map<String, dynamic>>.from(data);
+      _cacheStore.set(cacheKey, mapped, ttl: const Duration(minutes: 1));
+      return mapped;
     } catch (e) {
-      dev.log('Error fetching users via Edge Function',
-          error: e, name: 'SettingsRepository');
+      dev.log('CRITICAL ERROR in getUsers: $e', error: e, name: 'SettingsRepository');
+      ErrorHandler.logError('getUsers', e, source: 'SettingsRepository');
       // Fallback: Return empty list or try direct query if function fails
-      return [];
+      return cached?.value ?? [];
     }
   }
 
@@ -80,6 +114,7 @@ class SettingsRepository {
         'display_name': displayName,
         if (organizationId != null) 'organization_id': organizationId,
       });
+      _cacheStore.invalidate('settings:users');
     } on PostgrestException catch (e) {
       dev.log('Error creating user profile',
           error: e, name: 'SettingsRepository');
@@ -88,10 +123,20 @@ class SettingsRepository {
   }
 
   Future<void> updateUserRole(String userId, String role) async {
+    final orgId = _currentOrgId();
     try {
-      await _client
+      var query = _client
           .from('users_profile')
-          .update({'role': role}).eq('user_id', userId);
+          .update({'role': role})
+          .eq('user_id', userId);
+
+      // Scope to current organization to prevent cross-tenant changes
+      if (orgId != null && orgId.isNotEmpty) {
+        query = query.eq('organization_id', orgId);
+      }
+
+      await query;
+      _cacheStore.invalidate('settings:users');
     } on PostgrestException catch (e) {
       dev.log('Error updating role', error: e, name: 'SettingsRepository');
       throw Exception('Error al actualizar rol: ${e.message}');
@@ -100,27 +145,47 @@ class SettingsRepository {
 
   Future<void> deleteUserProfile(String userId) async {
     try {
-      await _client.from('users_profile').delete().eq('user_id', userId);
-    } on PostgrestException catch (e) {
+      final response = await _client.functions.invoke('delete_user', body: {
+        'target_user_id': userId,
+      });
+
+      if (response.status != 200) {
+        throw Exception('Error deleting user: ${response.data}');
+      }
+
+      _cacheStore.invalidate('settings:users');
+    } on FunctionException catch (e) {
+      dev.log('Function error deleting user profile',
+          error: e, name: 'SettingsRepository');
+      throw Exception('Error de permisos al eliminar usuario: ${e.details ?? e.reasonPhrase}');
+    } catch (e) {
       dev.log('Error deleting user profile',
           error: e, name: 'SettingsRepository');
-      throw Exception('Error al eliminar perfil: ${e.message}');
+      throw Exception('Error al eliminar perfil: $e');
     }
   }
 
   // --- DEVICE MANAGEMENT (Using Edge Function to bypass RLS) ---
 
   Future<List<Map<String, dynamic>>> getDevices() async {
+    const cacheKey = 'settings:devices';
+    final cached = _cacheStore.get<List<Map<String, dynamic>>>(cacheKey);
+    if (cached != null && cached.isValidAt(DateTime.now())) {
+      return cached.value;
+    }
+
     try {
       final response = await _client.functions
           .invoke('manage_devices', method: HttpMethod.get);
       if (response.status != 200) throw Exception('Status ${response.status}');
 
       final List<dynamic> data = response.data;
-      return List<Map<String, dynamic>>.from(data);
+      final mapped = List<Map<String, dynamic>>.from(data);
+      _cacheStore.set(cacheKey, mapped, ttl: const Duration(minutes: 1));
+      return mapped;
     } catch (e) {
-      dev.log('Error fetching devices', error: e, name: 'SettingsRepository');
-      return [];
+      ErrorHandler.logError('getDevices', e, source: 'SettingsRepository');
+      return cached?.value ?? [];
     }
   }
 
@@ -134,10 +199,10 @@ class SettingsRepository {
       final response = await _client.functions.invoke('manage_devices',
           method: HttpMethod.post,
           body: {
+            'id': deviceId,
             'device_id': deviceId,
             'alias': alias,
-            'pin': pinHash,
-            'pin_hash': pinHash
+            'pin': pinHash
           });
 
       if (response.status != 200 && response.status != 201) {
@@ -164,10 +229,19 @@ class SettingsRepository {
       throw Exception('Cannot create device without organization context');
     }
     try {
+      // Generate salt and hash the PIN the same way the Edge Function does:
+      // sha256("$salt:$pin")
+      final random = Random.secure();
+      final saltBytes = List<int>.generate(16, (_) => random.nextInt(256));
+      final pinSalt = saltBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      final hashedPin = sha256.convert(utf8.encode('$pinSalt:$pinHash')).toString();
+
       await _client.from('devices').insert({
         'device_id': deviceId,
         'alias': alias,
-        'pin_hash': pinHash,
+        'pin': null,
+        'pin_hash': hashedPin,
+        'pin_salt': pinSalt,
         'enabled': true,
         'organization_id': organizationId,
       });
@@ -181,6 +255,7 @@ class SettingsRepository {
     try {
       await _client.functions.invoke('manage_devices',
           method: HttpMethod.delete, body: {'id': deviceId});
+      _cacheStore.invalidate('settings:devices');
     } catch (e) {
       dev.log('Error deleting device', error: e, name: 'SettingsRepository');
       throw Exception('Error al eliminar dispositivo: $e');
@@ -191,6 +266,7 @@ class SettingsRepository {
     try {
       await _client.functions.invoke('manage_devices',
           method: HttpMethod.patch, body: {'id': deviceId, 'enabled': enabled});
+      _cacheStore.invalidate('settings:devices');
     } catch (e) {
       dev.log('Error toggling device', error: e, name: 'SettingsRepository');
       throw Exception('Error al cambiar estado: $e');
@@ -199,13 +275,11 @@ class SettingsRepository {
 
   Future<void> createUser(
       {required String email,
-      required String password,
       required String displayName,
       required String role}) async {
     try {
       final response = await _client.functions.invoke('create_user', body: {
         'email': email,
-        'password': password,
         'display_name': displayName,
         'role': role
       });
@@ -213,6 +287,8 @@ class SettingsRepository {
       if (response.status != 200) {
         throw Exception('Error creating user: ${response.status}');
       }
+      
+      _cacheStore.invalidate('settings:users');
     } catch (e) {
       dev.log('Error creating user via Edge Function',
           error: e, name: 'SettingsRepository');

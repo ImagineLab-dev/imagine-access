@@ -3,6 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as dev;
 import 'package:uuid/uuid.dart';
 import '../../auth/presentation/auth_controller.dart';
+import '../../../core/utils/error_handler.dart';
+import '../../../core/offline/offline_queue_service.dart';
+import '../../../core/offline/pending_operation.dart';
 
 class ScannerRepository {
   final SupabaseClient _client;
@@ -11,15 +14,17 @@ class ScannerRepository {
 
   Future<Map<String, dynamic>> validateQr(
       String qrToken, String? deviceId, String? pin, String eventId) async {
+    final requestId = const Uuid().v4();
+    final payload = {
+      'method': 'qr',
+      'qr_token': qrToken,
+      'device_id': deviceId,
+      'event_id': eventId,
+      'request_id': requestId,
+    };
+
     try {
-      final requestId = const Uuid().v4();
-      final response = await _client.functions.invoke('validate_ticket', body: {
-        'method': 'qr',
-        'qr_token': qrToken,
-        'device_id': deviceId,
-        'event_id': eventId,
-        'request_id': requestId,
-      });
+      final response = await _client.functions.invoke('validate_ticket', body: payload);
 
       if (response.status != 200) {
         throw response.data['error'] ?? 'Error de validación QR';
@@ -28,6 +33,20 @@ class ScannerRepository {
       return Map<String, dynamic>.from(response.data);
     } catch (e) {
       dev.log('Error in validateQr', error: e, name: 'ScannerRepository');
+      final networkError = ErrorHandler.analyzeError(e);
+      if (networkError.isRetryable) {
+        await _ref.read(offlineQueueProvider).enqueue(
+              PendingOperation(
+                id: requestId,
+                type: 'validate_ticket',
+                payload: payload,
+                createdAt: DateTime.now(),
+              ),
+            );
+        throw const OfflineQueuedException(
+          'Sin conexión. Validación encolada para sincronizar.',
+        );
+      }
       rethrow;
     }
   }
@@ -38,16 +57,18 @@ class ScannerRepository {
     required String reason,
     required String? deviceId,
   }) async {
+    final requestId = const Uuid().v4();
+    final payload = {
+      'method': 'doc',
+      'buyer_doc': doc,
+      'event_id': eventId,
+      'notes': reason,
+      'device_id': deviceId,
+      'request_id': requestId,
+    };
+
     try {
-      final requestId = const Uuid().v4();
-      final response = await _client.functions.invoke('validate_ticket', body: {
-        'method': 'doc',
-        'buyer_doc': doc,
-        'event_id': eventId,
-        'notes': reason,
-        'device_id': deviceId,
-        'request_id': requestId,
-      });
+      final response = await _client.functions.invoke('validate_ticket', body: payload);
 
       if (response.status != 200) {
         throw response.data['error'] ?? 'Error de validación por documento';
@@ -56,6 +77,20 @@ class ScannerRepository {
       return Map<String, dynamic>.from(response.data);
     } catch (e) {
       dev.log('Error in validateDoc', error: e, name: 'ScannerRepository');
+      final networkError = ErrorHandler.analyzeError(e);
+      if (networkError.isRetryable) {
+        await _ref.read(offlineQueueProvider).enqueue(
+              PendingOperation(
+                id: requestId,
+                type: 'validate_ticket',
+                payload: payload,
+                createdAt: DateTime.now(),
+              ),
+            );
+        throw const OfflineQueuedException(
+          'Sin conexión. Validación manual encolada para sincronizar.',
+        );
+      }
       rethrow;
     }
   }
@@ -65,15 +100,17 @@ class ScannerRepository {
     required String reason,
     required String? deviceId,
   }) async {
+    final requestId = const Uuid().v4();
+    final payload = {
+      'method': 'id',
+      'ticket_id': ticketId,
+      'notes': reason,
+      'device_id': deviceId,
+      'request_id': requestId,
+    };
+
     try {
-      final requestId = const Uuid().v4();
-      final response = await _client.functions.invoke('validate_ticket', body: {
-        'method': 'id',
-        'ticket_id': ticketId,
-        'notes': reason,
-        'device_id': deviceId,
-        'request_id': requestId,
-      });
+      final response = await _client.functions.invoke('validate_ticket', body: payload);
 
       if (response.status != 200) {
         throw response.data['error'] ?? 'Error de validación por ID';
@@ -82,6 +119,20 @@ class ScannerRepository {
       return Map<String, dynamic>.from(response.data);
     } catch (e) {
       dev.log('Error in validateById', error: e, name: 'ScannerRepository');
+      final networkError = ErrorHandler.analyzeError(e);
+      if (networkError.isRetryable) {
+        await _ref.read(offlineQueueProvider).enqueue(
+              PendingOperation(
+                id: requestId,
+                type: 'validate_ticket',
+                payload: payload,
+                createdAt: DateTime.now(),
+              ),
+            );
+        throw const OfflineQueuedException(
+          'Sin conexión. Validación encolada para sincronizar.',
+        );
+      }
       rethrow;
     }
   }

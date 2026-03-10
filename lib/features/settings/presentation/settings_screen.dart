@@ -8,11 +8,12 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/app_roles.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/i18n/locale_provider.dart';
+import '../../../core/utils/currency_helper.dart';
 import 'package:imagine_access/features/dashboard/data/dashboard_repository.dart';
 import 'package:imagine_access/features/auth/presentation/auth_controller.dart';
 import 'package:imagine_access/features/settings/data/settings_repository.dart';
 import 'package:imagine_access/features/events/data/event_repository.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -44,24 +45,26 @@ class SettingsScreen extends ConsumerWidget {
                   final isDark = theme.brightness == Brightness.dark;
                   final dropdownColor = isDark ? Colors.black87 : Colors.white;
                   final textColor = isDark ? Colors.white : Colors.black87;
+                  final currentValue = currencyAsync.value ?? 'PYG';
 
                   return DropdownButton<String>(
-                      value: currencyAsync.value ?? 'PYG',
+                      value: CurrencyHelper.currencies.containsKey(currentValue)
+                          ? currentValue
+                          : 'PYG',
                       dropdownColor: dropdownColor,
-                      style: TextStyle(color: textColor, fontSize: 16),
+                      style: TextStyle(color: textColor, fontSize: 14),
                       underline: const SizedBox(),
                       iconEnabledColor:
                           isDark ? Colors.white70 : Colors.black87,
-                      items: [
-                        DropdownMenuItem(
-                            value: 'PYG',
-                            child: Text('GS (PYG)',
-                                style: TextStyle(color: textColor))),
-                        DropdownMenuItem(
-                            value: 'USD',
-                            child: Text('USD (\$ )',
-                                style: TextStyle(color: textColor))),
-                      ],
+                      items: CurrencyHelper.currencies.entries
+                          .map((e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Text(
+                                  '${e.value.symbol} ${e.key}',
+                                  style: TextStyle(color: textColor),
+                                ),
+                              ))
+                          .toList(),
                       onChanged: (val) async {
                         if (val != null) {
                           await ref
@@ -96,7 +99,7 @@ class SettingsScreen extends ConsumerWidget {
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(isDark ? 'Dark' : 'Light',
+                      Text(isDark ? l10n.darkMode : l10n.lightMode,
                           style: theme.textTheme.bodySmall),
                       const SizedBox(width: 8),
                       Switch(
@@ -106,7 +109,7 @@ class SettingsScreen extends ConsumerWidget {
                               .read(themeNotifierProvider.notifier)
                               .setTheme(val ? ThemeMode.dark : ThemeMode.light);
                         },
-                        activeColor: AppTheme.neonBlue,
+                        activeThumbColor: AppTheme.neonBlue,
                       ),
                     ],
                   );
@@ -200,9 +203,7 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.refresh,
             title: l10n.forceRefresh,
-            subtitle: l10n.language == 'Español'
-                ? 'Recargar datos e interfaz'
-                : 'Reload locale & data',
+            subtitle: l10n.reloadLocaleData,
             onTap: () async {
               ScaffoldMessenger.of(context)
                   .showSnackBar(SnackBar(content: Text(l10n.refreshing)));
@@ -219,9 +220,7 @@ class SettingsScreen extends ConsumerWidget {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(l10n.language == 'Español'
-                        ? '¡Actualizado!'
-                        : 'Updated!'),
+                    content: Text(l10n.updated),
                     backgroundColor: Colors.green));
               }
             },

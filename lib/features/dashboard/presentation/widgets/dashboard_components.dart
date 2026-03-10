@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/ui/glass_card.dart';
 
@@ -106,7 +108,8 @@ class EliteMetricCard extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress,
                     backgroundColor:
-                        (isDark ? Colors.white : Colors.black).withOpacity(0.1),
+                      (isDark ? Colors.white : Colors.black)
+                        .withValues(alpha: 0.1),
                     valueColor: AlwaysStoppedAnimation<Color>(
                         progressColor ?? color),
                     borderRadius: BorderRadius.circular(2),
@@ -175,7 +178,7 @@ class ActionItem {
 
 class QuickActions extends StatelessWidget {
   final List<ActionItem> actions;
-  final VoidCallback? onActionBeforeNavigate;
+  final bool Function(ActionItem action)? onActionBeforeNavigate;
 
   const QuickActions({
     super.key,
@@ -187,12 +190,13 @@ class QuickActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context)!;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Acciones Rápidas',
+          l10n.quickActions,
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.bold,
             color: isDark ? Colors.white : Colors.black87,
@@ -224,7 +228,7 @@ class QuickActions extends StatelessWidget {
 
 class ActionCard extends StatelessWidget {
   final ActionItem action;
-  final VoidCallback? onBeforeNavigate;
+  final bool Function(ActionItem action)? onBeforeNavigate;
 
   const ActionCard({
     super.key,
@@ -242,22 +246,32 @@ class ActionCard extends StatelessWidget {
       padding: EdgeInsets.zero,
       child: InkWell(
         onTap: () {
-          if (onBeforeNavigate != null) {
-            onBeforeNavigate!();
+          final canNavigate = onBeforeNavigate?.call(action) ?? true;
+          if (!canNavigate) {
+            return;
           }
+
+          if (action.route.isEmpty || action.route == '#') {
+            return;
+          }
+
+          context.push(action.route);
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
             border: action.isPrimary
-                ? Border.all(color: AppTheme.accentBlue.withOpacity(0.5), width: 1.5)
+                ? Border.all(
+                    color: AppTheme.accentBlue.withValues(alpha: 0.5),
+                    width: 1.5,
+                  )
                 : null,
             borderRadius: BorderRadius.circular(16),
             gradient: action.isPrimary
                 ? LinearGradient(
                     colors: [
-                      AppTheme.accentBlue.withOpacity(0.1),
-                      AppTheme.accentPurple.withOpacity(0.05),
+                      AppTheme.accentBlue.withValues(alpha: 0.1),
+                      AppTheme.accentPurple.withValues(alpha: 0.05),
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -272,7 +286,7 @@ class ActionCard extends StatelessWidget {
                 size: 24,
                 color: action.isPrimary
                     ? AppTheme.accentBlue
-                    : baseColor.withOpacity(0.8),
+                  : baseColor.withValues(alpha: 0.8),
               ),
               const SizedBox(height: 8),
               Text(
@@ -282,7 +296,9 @@ class ActionCard extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   fontSize: 11,
                   letterSpacing: 1.1,
-                  color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.9)
+                      : Colors.black87,
                 ),
               ),
             ],

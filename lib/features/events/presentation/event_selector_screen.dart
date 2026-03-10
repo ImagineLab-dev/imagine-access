@@ -8,6 +8,7 @@ import '../../../core/constants/app_roles.dart';
 import '../data/event_repository.dart';
 import 'create_event_screen.dart';
 import 'admin_event_list.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 class EventSelectorScreen extends ConsumerWidget {
   const EventSelectorScreen({super.key});
@@ -16,16 +17,17 @@ class EventSelectorScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final eventsAsync = ref.watch(eventsProvider);
     final role = ref.watch(userRoleProvider);
+    final l10n = AppLocalizations.of(context)!;
 
     return DefaultTabController(
       length: 2,
       child: GlassScaffold(
         appBar: AppBar(
-          title: const Text('Manage Events'),
-          bottom: const TabBar(
+          title: Text(l10n.manageEvents),
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Active'),
-              Tab(text: 'Archived'),
+              Tab(text: l10n.active),
+              Tab(text: l10n.archived),
             ],
             indicatorColor: AppTheme.neonBlue,
           ),
@@ -43,7 +45,7 @@ class EventSelectorScreen extends ConsumerWidget {
         ),
         body: eventsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (err, stack) => Center(child: Text('Error: $err')),
+          error: (err, stack) => Center(child: Text(l10n.errorWithDetail(err.toString()))),
             data: (events) {
               final activeEvents = events
                   .where((e) => (e['is_archived'] as bool? ?? false) == false)

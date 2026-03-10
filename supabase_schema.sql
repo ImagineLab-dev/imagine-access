@@ -50,7 +50,9 @@ create table public.users_profile (
 create table public.devices (
   device_id text primary key,
   alias text,
-  pin_hash text not null,
+  pin text,
+  pin_hash text,
+  pin_salt text,
   enabled boolean default true,
   role text default 'door',
   created_at timestamptz default now()
@@ -166,12 +168,11 @@ create index idx_ticket_types_event on public.ticket_types(event_id);
 
 
 -- SETUP INICIAL
-insert into storage.buckets (id, name, public) values ('tickets', 'tickets', true) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('tickets', 'tickets', false) on conflict (id) do update set public = excluded.public;
 
 drop policy if exists "Uploads" on storage.objects;
-create policy "Uploads" on storage.objects for insert to public with check (bucket_id = 'tickets');
+create policy "Uploads" on storage.objects for insert to authenticated with check (bucket_id = 'tickets');
 drop policy if exists "Downloads" on storage.objects;
-create policy "Downloads" on storage.objects for select to public using (bucket_id = 'tickets');
 
 -- Datos Iniciales de Prueba
 insert into public.events (slug, name, date, venue, address, currency, is_active)

@@ -1,15 +1,18 @@
 
 import { createTransport } from "npm:nodemailer@6.9.7";
 
-export const sendEmail = async (to: string, subject: string, html: string) => {
+export const sendEmail = async (
+    to: string,
+    subject: string,
+    html: string,
+    attachments?: Array<Record<string, unknown>>,
+) => {
     const SMTP_HOST = Deno.env.get("SMTP_HOST") || "smtp.hostinger.com";
+    const SMTP_DEBUG = (Deno.env.get("SMTP_DEBUG") ?? "false").toLowerCase() === "true";
 
-    // HARDCODED FIX: Force Port 587 if using Hostinger to bypass block 465
-    // This overrides the '465' setting in Supabase Secrets if present
-    let SMTP_PORT = 587;
-    const envPort = Deno.env.get("SMTP_PORT");
-    if (envPort && envPort !== "465") {
-        SMTP_PORT = parseInt(envPort);
+    let SMTP_PORT = Number.parseInt(Deno.env.get("SMTP_PORT") ?? "587", 10);
+    if (!Number.isFinite(SMTP_PORT) || SMTP_PORT <= 0) {
+        SMTP_PORT = 587;
     }
 
     const SMTP_USER = Deno.env.get("SMTP_USER") || "automatiza@imaginelab.agency";
@@ -24,15 +27,15 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
     const transporter = createTransport({
         host: SMTP_HOST,
         port: SMTP_PORT,
-        secure: false, // STARTTLS requires secure: false
+        secure: SMTP_PORT === 465,
         auth: {
             user: SMTP_USER,
             pass: SMTP_PASS,
         },
-        logger: true,
-        debug: true,
+        logger: SMTP_DEBUG,
+        debug: SMTP_DEBUG,
         tls: {
-            rejectUnauthorized: false
+            minVersion: 'TLSv1.2'
         }
     });
 
@@ -44,6 +47,7 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
             to,
             subject,
             html,
+            attachments,
         });
         console.log("Email sent: %s", info.messageId);
         return info;

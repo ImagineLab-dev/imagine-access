@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/error_handler.dart';
 import '../data/event_repository.dart';
 import '../../auth/presentation/auth_controller.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 class CreateEventDialog extends ConsumerStatefulWidget {
   const CreateEventDialog({super.key});
@@ -36,6 +37,7 @@ class _CreateEventDialogState extends ConsumerState<CreateEventDialog> {
   }
 
   Future<void> _create() async {
+    final l10n = AppLocalizations.of(context)!;
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -56,12 +58,11 @@ class _CreateEventDialogState extends ConsumerState<CreateEventDialog> {
       if (mounted) {
         ref.invalidate(eventsProvider); // Refresh list
         Navigator.of(context).pop();
-        ErrorHandler.showSuccessSnackBar(
-            context, 'Event Created Successfully!');
+        ErrorHandler.showSuccessSnackBar(context, l10n.eventCreatedSuccessfully);
       }
     } catch (e) {
       if (mounted) {
-        ErrorHandler.showErrorSnackBar(context, 'Error: $e');
+        ErrorHandler.showErrorSnackBar(context, l10n.errorWithDetail(e.toString()));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -71,18 +72,19 @@ class _CreateEventDialogState extends ConsumerState<CreateEventDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
 
     return Dialog(
       backgroundColor: Colors.transparent,
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-            color: theme.scaffoldBackgroundColor.withOpacity(0.95),
+            color: theme.scaffoldBackgroundColor.withValues(alpha: 0.95),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppTheme.neonBlue.withOpacity(0.3)),
+            border: Border.all(color: AppTheme.neonBlue.withValues(alpha: 0.3)),
             boxShadow: [
               BoxShadow(
-                  color: AppTheme.neonBlue.withOpacity(0.1),
+                  color: AppTheme.neonBlue.withValues(alpha: 0.1),
                   blurRadius: 20,
                   spreadRadius: 5)
             ]),
@@ -92,47 +94,47 @@ class _CreateEventDialogState extends ConsumerState<CreateEventDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('New Event',
+              Text(l10n.newEvent,
                   style: theme.textTheme.headlineSmall
                       ?.copyWith(fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center),
               const SizedBox(height: 24),
               CustomInput(
-                label: 'Event Name',
+                label: l10n.eventName,
                 controller: _nameCtrl,
                 icon: Icons.event,
-                validator: (v) => v!.isEmpty ? 'Required' : null,
+                validator: (v) => v!.isEmpty ? l10n.required : null,
               ),
               const SizedBox(height: 16),
               CustomInput(
-                label: 'Venue',
+                label: l10n.venueName,
                 controller: _venueCtrl,
                 icon: Icons.location_on,
-                validator: (v) => v!.isEmpty ? 'Required' : null,
+                validator: (v) => v!.isEmpty ? l10n.required : null,
               ),
               const SizedBox(height: 16),
               CustomInput(
-                label: 'Address',
+                label: l10n.address,
                 controller: _addressCtrl,
                 icon: Icons.map,
-                validator: (v) => v!.isEmpty ? 'Required' : null,
+                validator: (v) => v!.isEmpty ? l10n.required : null,
               ),
               const SizedBox(height: 16),
               CustomInput(
-                label: 'City',
+                label: l10n.city,
                 controller: _cityCtrl,
                 icon: Icons.location_city,
-                validator: (v) => v!.isEmpty ? 'Required' : null,
+                validator: (v) => v!.isEmpty ? l10n.required : null,
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
                     child: CustomInput(
-                      label: 'Slug (URL id)',
+                      label: l10n.slug,
                       controller: _slugCtrl,
                       icon: Icons.link,
-                      validator: (v) => v!.isEmpty ? 'Required' : null,
+                      validator: (v) => v!.isEmpty ? l10n.required : null,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -177,14 +179,14 @@ class _CreateEventDialogState extends ConsumerState<CreateEventDialog> {
                           color: AppTheme.neonBlue),
                       const SizedBox(width: 12),
                       Text(
-                          "Date: ${_selectedDate.toLocal().toString().split(' ')[0]}")
+                          "${l10n.date}: ${_selectedDate.toLocal().toString().split(' ')[0]}")
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 32),
               NeonButton(
-                  text: 'CREATE EVENT',
+                  text: l10n.createEvent.toUpperCase(),
                   icon: Icons.check,
                   isLoading: _isLoading,
                   onPressed: _create)

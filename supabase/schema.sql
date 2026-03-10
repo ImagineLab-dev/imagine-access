@@ -46,7 +46,9 @@ create table public.checkins (
 create table public.devices (
   id text primary key, -- device_id from app
   alias text,
-  pin text not null, -- hashed or plain? plain for simplicity in MVP, but hashed ideally.
+  pin text,
+  pin_hash text,
+  pin_salt text,
   enabled boolean default true,
   last_active_at timestamptz
 );
@@ -67,8 +69,7 @@ create policy "Read tickets" on public.tickets for select using (auth.role() = '
 create policy "Insert tickets" on public.tickets for insert with check (auth.role() = 'authenticated');
 
 -- Storage Bucket for PDFs
-insert into storage.buckets (id, name, public) values ('tickets', 'tickets', true);
-create policy "Public Access to Ticket PDFs" on storage.objects for select using ( bucket_id = 'tickets' );
+insert into storage.buckets (id, name, public) values ('tickets', 'tickets', false);
 
 -- ==========================================
 -- RBAC & PROFESSIONAL FEATURES (Phase 2)

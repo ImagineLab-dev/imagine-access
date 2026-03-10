@@ -41,7 +41,7 @@ class NeonButton extends StatelessWidget {
             ? []
             : [
                 BoxShadow(
-                  color: baseColor.withOpacity(0.3),
+                  color: baseColor.withValues(alpha: 0.3),
                   blurRadius: 15,
                   spreadRadius: -2,
                   offset: const Offset(0, 8),
@@ -58,10 +58,15 @@ class NeonButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: isSecondary ? Colors.transparent : baseColor,
           foregroundColor: textColor,
-          disabledBackgroundColor: isSecondary ? Colors.transparent : baseColor.withOpacity(0.5),
+            disabledBackgroundColor:
+              isSecondary ? Colors.transparent : baseColor.withValues(alpha: 0.5),
           shadowColor: Colors.transparent,
           side: isSecondary 
-              ? BorderSide(color: (isDark ? Colors.white : Colors.black).withOpacity(0.2), width: 1.5) 
+              ? BorderSide(
+                color: (isDark ? Colors.white : Colors.black)
+                  .withValues(alpha: 0.2),
+                width: 1.5,
+              ) 
               : null,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -101,7 +106,7 @@ class NeonButton extends StatelessWidget {
     .animate(target: onPressed == null ? 0 : 1)
     .shimmer(
       duration: 1800.ms, 
-      color: Colors.white.withOpacity(0.15),
+      color: Colors.white.withValues(alpha: 0.15),
       stops: [0, 0.5, 1],
     )
     .scale(

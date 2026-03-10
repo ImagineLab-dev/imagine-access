@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../events/presentation/event_state.dart';
 import 'dashboard_components.dart';
@@ -40,7 +40,7 @@ class DoorDashboardView extends ConsumerWidget {
               delay: 100,
             ),
             MetricCard(
-              title: "MANUAL",
+              title: l10n.manualUpper,
               value: (metrics['scanned_manual'] ?? 0).toString(),
               icon: Icons.back_hand,
               color: Colors.blueGrey,
@@ -102,32 +102,28 @@ class DoorDashboardView extends ConsumerWidget {
               '/document_search',
               color: Colors.blueAccent,
             ),
-            ActionItem(
-              l10n.viewAllTickets,
-              Icons.list_alt,
-              '/tickets',
-              color: Colors.orangeAccent,
-            ),
-            ActionItem(
-              l10n.refresh.toUpperCase(),
-              Icons.refresh,
-              '#',
-              color: Colors.grey,
-            ),
           ],
-          onActionBeforeNavigate: () => _checkEventSelected(context, ref),
+          onActionBeforeNavigate: (action) =>
+              _checkEventSelected(context, ref, action.route),
         ),
       ],
     );
   }
 
-  void _checkEventSelected(BuildContext context, WidgetRef ref) {
+  bool _checkEventSelected(BuildContext context, WidgetRef ref, String route) {
+    if (route == '/tickets') {
+      return true;
+    }
+
     final selectedEvent = ref.read(selectedEventProvider);
     if (selectedEvent == null) {
       final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.pleaseSelectEvent)),
       );
+      return false;
     }
+
+    return true;
   }
 }

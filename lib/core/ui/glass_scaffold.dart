@@ -57,10 +57,12 @@ class GlassScaffold extends StatelessWidget {
               height: 300,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppTheme.primaryColor.withOpacity(isDark ? 0.05 : 0.03),
+                color:
+                    AppTheme.primaryColor.withValues(alpha: isDark ? 0.05 : 0.03),
                 boxShadow: [
                   BoxShadow(
-                    color: AppTheme.primaryColor.withOpacity(isDark ? 0.1 : 0.05),
+                    color: AppTheme.primaryColor
+                        .withValues(alpha: isDark ? 0.1 : 0.05),
                     blurRadius: 100,
                     spreadRadius: 50,
                   ),

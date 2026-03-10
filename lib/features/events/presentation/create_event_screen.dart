@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/ui/glass_scaffold.dart';
 import '../../../core/ui/glass_card.dart';
 import '../../../core/ui/custom_input.dart';
@@ -13,7 +14,7 @@ import '../../settings/data/settings_repository.dart'; // To get default currenc
 import 'ticket_types_widget.dart';
 import 'event_state.dart'; // To access selectedEventProvider
 
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 class CreateEventScreen extends ConsumerStatefulWidget {
   final String? eventId; // If null, create mode. If set, edit mode.
@@ -141,17 +142,39 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
       if (widget.eventId == null) {
         // Create — associate with user's organization
-        final orgId = ref.read(organizationIdProvider);
-        final res = await ref.read(eventRepositoryProvider).createEvent(
-              name: _nameCtrl.text,
-              venue: _venueCtrl.text,
-              address: _addressCtrl.text,
-              city: _cityCtrl.text,
-              slug: _slugCtrl.text,
-              date: fullDate,
-              currency: _currency,
-              organizationId: orgId,
-            );
+        final authController = ref.read(authControllerProvider.notifier);
+        var orgId = ref.read(organizationIdProvider);
+        orgId ??= await authController.ensureOrganizationReady();
+
+        Map<String, dynamic> res;
+        try {
+          res = await ref.read(eventRepositoryProvider).createEvent(
+                name: _nameCtrl.text,
+                venue: _venueCtrl.text,
+                address: _addressCtrl.text,
+                city: _cityCtrl.text,
+                slug: _slugCtrl.text,
+                date: fullDate,
+                currency: _currency,
+                organizationId: orgId,
+              );
+        } on PostgrestException catch (e) {
+          final isOrgFkError =
+              e.code == '23503' && e.message.contains('organization_id_fkey');
+          if (!isOrgFkError) rethrow;
+
+          final repairedOrgId = await authController.ensureOrganizationReady();
+          res = await ref.read(eventRepositoryProvider).createEvent(
+                name: _nameCtrl.text,
+                venue: _venueCtrl.text,
+                address: _addressCtrl.text,
+                city: _cityCtrl.text,
+                slug: _slugCtrl.text,
+                date: fullDate,
+                currency: _currency,
+                organizationId: repairedOrgId,
+              );
+        }
         newEventId = res['id'];
       } else {
         // Update
@@ -285,7 +308,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             content: Text('${l10n.error}: $e'), backgroundColor: Colors.red));
       }
     } finally {
-      if (context.mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -461,7 +484,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                           ),
                         ),
                         DropdownButtonFormField<String>(
-                          value: _currency,
+                          initialValue: _currency,
                           dropdownColor: theme.brightness == Brightness.dark
                               ? Colors.black87
                               : Colors.white,
@@ -476,7 +499,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                             contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 16),
                             fillColor: theme.brightness == Brightness.dark
-                                ? AppTheme.surfaceColor.withOpacity(0.5)
+                              ? AppTheme.surfaceColor.withValues(alpha: 0.5)
                                 : AppTheme.lightInput,
                             filled: true,
                             border: OutlineInputBorder(
@@ -485,7 +508,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                                   color: (theme.brightness == Brightness.dark
                                           ? Colors.white
                                           : Colors.black)
-                                      .withOpacity(0.1)),
+                                  .withValues(alpha: 0.1)),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -493,7 +516,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                                   color: (theme.brightness == Brightness.dark
                                           ? Colors.white
                                           : Colors.black)
-                                      .withOpacity(0.1)),
+                                  .withValues(alpha: 0.1)),
                             ),
                           ),
                           items: const [
@@ -520,8 +543,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 onDeleted: (id) => _deletedTicketTypeIds.add(id),
               ),
               _PricingCard(
-                title: "Professional Access (Staff)",
-                subtitle: "Creates 'Staff Access' ticket (Price: 0)",
+                title: l10n.professionalAccessStaff,
+                subtitle: l10n.createsStaffAccessTicket,
                 icon: Icons.badge,
                 color: Colors.blueAccent,
                 value: _hasStaffTicket,
@@ -529,9 +552,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               ),
               const SizedBox(height: 16),
               _PricingCard(
-                title: "Enable Invitations (Normal)",
-                subtitle:
-                    "Creates 'Invitation' ticket (Price: 0) - For RRPP Quotas",
+                title: l10n.enableInvitationsNormal,
+                subtitle: l10n.createsInvitationTicketForQuotas,
                 icon: Icons.mail,
                 color: Colors.purpleAccent,
                 value: _hasInvitationTicket,
@@ -551,8 +573,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                       const SizedBox(width: 8),
                       Text(
                           _invitationValidUntil == null
-                              ? "Set Valid Until Time (Optional)"
-                              : "Valid until: ${_invitationValidUntil!.format(context)}",
+                            ? l10n.setValidUntilTimeOptional
+                            : l10n.validUntilTime(_invitationValidUntil!.format(context)),
                           style: TextStyle(
                               color: _invitationValidUntil == null
                                   ? Colors.white54
@@ -573,9 +595,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               ),
               const SizedBox(height: 16),
               _PricingCard(
-                title: "Enable VIP Guest List",
-                subtitle:
-                    "Creates 'Invitado Especial' ticket (Price: 0) - For VIP Quotas",
+                title: l10n.enableVipGuestList,
+                subtitle: l10n.createsVipGuestTicketForQuotas,
                 icon: Icons.star,
                 color: Colors.pinkAccent,
                 value: _hasGuestTicket,
@@ -641,7 +662,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         if (mounted) {
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text("Error: $e")));
+              .showSnackBar(SnackBar(content: Text(l10n.errorWithDetail(e.toString()))));
         }
       }
     }
@@ -690,7 +711,7 @@ class _PricingCard extends StatelessWidget {
                   style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ),
             value: value,
-            activeColor: color,
+            activeThumbColor: color,
             onChanged: onChanged,
           ),
           if (value && child != null) ...[

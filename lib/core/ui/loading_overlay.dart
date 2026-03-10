@@ -23,7 +23,7 @@ class LoadingOverlay extends ConsumerWidget {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
               child: Container(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -31,23 +31,27 @@ class LoadingOverlay extends ConsumerWidget {
                       Container(
                         padding: const EdgeInsets.all(24),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.05),
+                          color: Colors.white.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withValues(alpha: 0.1),
                           ),
                         ),
                         child: const CircularProgressIndicator(
                           strokeWidth: 3,
                           color: AppTheme.neonBlue,
                         ),
-                      ).animate(onPlay: (controller) => controller.repeat())
-                       .shimmer(duration: 1500.ms, color: AppTheme.neonBlue.withOpacity(0.3)),
+                      )
+                          .animate(onPlay: (controller) => controller.repeat())
+                          .shimmer(
+                            duration: 1500.ms,
+                            color: AppTheme.neonBlue.withValues(alpha: 0.3),
+                          ),
                       const SizedBox(height: 24),
                       Text(
                         'PROCESANDO',
                         style: theme.textTheme.labelLarge?.copyWith(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                           fontWeight: FontWeight.bold,
                           letterSpacing: 4,
                         ),

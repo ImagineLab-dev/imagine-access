@@ -58,7 +58,8 @@ class CustomInput extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: (isDark ? Colors.black : Colors.grey).withOpacity(0.2),
+                color:
+                    (isDark ? Colors.black : Colors.grey).withValues(alpha: 0.2),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -96,24 +97,28 @@ class CustomInput extends StatelessWidget {
                     )
                   : null),
               fillColor: isDark 
-                ? AppTheme.surfaceColor.withOpacity(enabled ? 0.5 : 0.2)
+                ? AppTheme.surfaceColor.withValues(alpha: enabled ? 0.5 : 0.2)
                 : AppTheme.lightInput,
               filled: true,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
-                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)
+                  color: (isDark ? Colors.white : Colors.black)
+                      .withValues(alpha: 0.1)
                 ),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
-                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)
+                  color: (isDark ? Colors.white : Colors.black)
+                      .withValues(alpha: 0.1)
                 ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppTheme.primaryColor.withOpacity(0.5)),
+                borderSide: BorderSide(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.5),
+                ),
               ),
             ),
           ),

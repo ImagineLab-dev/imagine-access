@@ -3,6 +3,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:imagine_access/features/tickets/data/ticket_repository.dart';
+import 'package:imagine_access/core/offline/offline_queue_service.dart';
+import 'package:imagine_access/core/offline/pending_operation.dart';
 
 // ─── Mocks ──────────────────────────────────────────────
 class MockSupabaseClient extends Mock implements SupabaseClient {}
@@ -11,18 +13,35 @@ class MockFunctionsClient extends Mock implements FunctionsClient {}
 
 class MockRef extends Mock implements Ref {}
 
+class MockOfflineQueueService extends Mock implements OfflineQueueService {}
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(
+      PendingOperation(
+        id: 'fallback-op',
+        type: 'create_ticket',
+        payload: const <String, dynamic>{},
+        createdAt: DateTime(2026, 1, 1),
+      ),
+    );
+  });
+
   late MockSupabaseClient mockClient;
   late MockFunctionsClient mockFunctions;
   late MockRef mockRef;
+  late MockOfflineQueueService mockOfflineQueue;
   late TicketRepository repository;
 
   setUp(() {
     mockClient = MockSupabaseClient();
     mockFunctions = MockFunctionsClient();
     mockRef = MockRef();
+    mockOfflineQueue = MockOfflineQueueService();
 
     when(() => mockClient.functions).thenReturn(mockFunctions);
+    when(() => mockRef.read(offlineQueueProvider)).thenReturn(mockOfflineQueue);
+    when(() => mockOfflineQueue.enqueue(any())).thenAnswer((_) async {});
     repository = TicketRepository(mockClient, mockRef);
   });
 
@@ -82,11 +101,31 @@ void main() {
         );
       });
 
-      test('wraps unexpected errors in TicketException', () async {
+      test('queues operation on retryable network errors', () async {
         when(() => mockFunctions.invoke(
               'create_ticket',
               body: any(named: 'body'),
             )).thenThrow(Exception('Network timeout'));
+
+        final result = await repository.createTicket(
+          eventSlug: 'test',
+          type: 'Standard',
+          price: 0,
+          buyerName: 'Test',
+          buyerEmail: 'test@test.com',
+          buyerDoc: '00000000',
+          buyerPhone: '+0',
+        );
+
+        expect(result['queued'], isTrue);
+        verify(() => mockOfflineQueue.enqueue(any())).called(1);
+      });
+
+      test('wraps non-retryable errors in TicketException', () async {
+        when(() => mockFunctions.invoke(
+              'create_ticket',
+              body: any(named: 'body'),
+            )).thenThrow(Exception('Bad request payload'));
 
         expect(
           () => repository.createTicket(

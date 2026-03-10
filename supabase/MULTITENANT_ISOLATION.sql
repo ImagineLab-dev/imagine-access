@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.organizations (
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 
 -- Users can only see their own organization
+DROP POLICY IF EXISTS "Users see own organization" ON public.organizations;
 CREATE POLICY "Users see own organization" ON public.organizations
     FOR ALL USING (owner_id = auth.uid() OR id IN (
         SELECT organization_id FROM public.users_profile WHERE user_id = auth.uid()
@@ -47,6 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_devices_org ON public.devices(organization_id);
 DROP POLICY IF EXISTS "Public Events Read" ON public.events;
 
 -- Users can only see events from their organization
+DROP POLICY IF EXISTS "Organization Events Read" ON public.events;
 CREATE POLICY "Organization Events Read" ON public.events
     FOR SELECT USING (
         organization_id IS NULL OR -- Legacy events (migration period)
@@ -57,6 +59,7 @@ CREATE POLICY "Organization Events Read" ON public.events
     );
 
 -- Users can only insert events to their organization
+DROP POLICY IF EXISTS "Organization Events Insert" ON public.events;
 CREATE POLICY "Organization Events Insert" ON public.events
     FOR INSERT WITH CHECK (
         organization_id IN (
@@ -66,6 +69,7 @@ CREATE POLICY "Organization Events Insert" ON public.events
     );
 
 -- Users can only update events from their organization
+DROP POLICY IF EXISTS "Organization Events Update" ON public.events;
 CREATE POLICY "Organization Events Update" ON public.events
     FOR UPDATE USING (
         organization_id IN (
@@ -75,6 +79,7 @@ CREATE POLICY "Organization Events Update" ON public.events
     );
 
 -- Users can only delete events from their organization
+DROP POLICY IF EXISTS "Organization Events Delete" ON public.events;
 CREATE POLICY "Organization Events Delete" ON public.events
     FOR DELETE USING (
         organization_id IN (
@@ -85,6 +90,7 @@ CREATE POLICY "Organization Events Delete" ON public.events
 
 -- 6. UPDATE RLS FOR TICKET_TYPES (cascade via event)
 DROP POLICY IF EXISTS "Public Types Read" ON public.ticket_types;
+DROP POLICY IF EXISTS "Organization Types Read" ON public.ticket_types;
 
 CREATE POLICY "Organization Types Read" ON public.ticket_types
     FOR SELECT USING (
@@ -99,6 +105,7 @@ CREATE POLICY "Organization Types Read" ON public.ticket_types
     );
 
 -- 7. UPDATE RLS FOR TICKETS (cascade via event)
+DROP POLICY IF EXISTS "Organization Tickets Read" ON public.tickets;
 CREATE POLICY "Organization Tickets Read" ON public.tickets
     FOR SELECT USING (
         event_id IN (
@@ -114,6 +121,7 @@ CREATE POLICY "Organization Tickets Read" ON public.tickets
 
 -- 8. UPDATE RLS FOR DEVICES
 DROP POLICY IF EXISTS "Device self-access" ON public.devices;
+DROP POLICY IF EXISTS "Organization Devices Access" ON public.devices;
 
 CREATE POLICY "Organization Devices Access" ON public.devices
     FOR ALL USING (

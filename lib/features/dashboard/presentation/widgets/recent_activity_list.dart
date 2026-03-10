@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/ui/glass_card.dart';
 import '../../data/dashboard_repository.dart';
@@ -45,12 +45,14 @@ class RecentActivityList extends ConsumerWidget {
                 indent: 70,
                 endIndent: 20,
                 height: 1,
-                color: (isDark ? Colors.white : Colors.black).withOpacity(0.05),
+                color: (isDark ? Colors.white : Colors.black)
+                    .withValues(alpha: 0.05),
               ),
               itemBuilder: (context, index) {
                 final act = latestItems[index];
                 final ticket = act['tickets'];
-                final buyer = ticket != null ? ticket['buyer_name'] ?? 'Unknown' : 'Unknown';
+                final buyer =
+                    ticket != null ? ticket['buyer_name'] ?? l10n.unknown : l10n.unknown;
                 final result = act['result'] as String;
                 final isSuccess = result == 'allowed' || result == 'Valid' || result == 'Granted';
                 final time = DateTime.parse(act['scanned_at']).toLocal();
@@ -61,8 +63,8 @@ class RecentActivityList extends ConsumerWidget {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: isSuccess
-                          ? AppTheme.accentGreen.withOpacity(0.1)
-                          : Colors.red.withOpacity(0.1),
+                          ? AppTheme.accentGreen.withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -72,14 +74,17 @@ class RecentActivityList extends ConsumerWidget {
                     ),
                   ),
                   title: Text(
-                    (act['method'] as String? ?? 'SCAN').toUpperCase(),
+                    (act['method'] as String? ?? l10n.scanned).toUpperCase(),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                   subtitle: Text(
-                    '$buyer • por ${ticket?['users_profile']?['display_name'] ?? 'Sistema'}',
+                    l10n.activityByLine(
+                      buyer,
+                      ticket?['users_profile']?['display_name'] ?? l10n.systemUser,
+                    ),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: isDark ? Colors.grey : Colors.black54,
                     ),

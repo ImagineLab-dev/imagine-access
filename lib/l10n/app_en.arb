@@ -200,5 +200,202 @@
   "entered": "ENTERED",
   "toEnterTitle": "TO ENTER",
   "paidShort": "P",
-  "inviteShort": "I"
+  "inviteShort": "I",
+  "welcomeTagline": "Control access, tickets, and validation with elegance and precision",
+  "welcomeMainFeatures": "MAIN FEATURES",
+  "systemOnline": "System online",
+  "lockoutWaitSeconds": "Too many attempts. Wait {seconds}s.",
+  "@lockoutWaitSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "invalidCredentials": "Invalid credentials.",
+  "companyName": "Company Name",
+  "enterCompanyName": "Enter your company name",
+  "invalidEmail": "Invalid email",
+  "passwordMinLength": "Password must be at least 6 characters",
+  "retry": "RETRY",
+  "darkMode": "Dark",
+  "lightMode": "Light",
+  "reloadLocaleData": "Reload locale & data",
+  "updated": "Updated!",
+  "addMember": "Add Member",
+  "unknown": "Unknown",
+  "deleteMemberQuestion": "Delete Member?",
+  "confirmRemoveMember": "Are you sure you want to remove {name}?",
+  "@confirmRemoveMember": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "addTeamMember": "Add Team Member",
+  "roleLabel": "Role",
+  "userCreatedSuccessfully": "User created successfully!",
+  "createUser": "Create User",
+  "thisDevice": "THIS DEVICE",
+  "deviceEnabled": "Device enabled",
+  "deviceDisabled": "Device disabled",
+  "deleteDeviceQuestion": "Delete Device?",
+  "confirmDeleteAlias": "Are you sure you want to delete \"{alias}\"?",
+  "@confirmDeleteAlias": {
+    "placeholders": {
+      "alias": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceDeleted": "Device deleted",
+  "errorDeletingDevice": "Error deleting: {error}",
+  "@errorDeletingDevice": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "pinCopied": "PIN copied!",
+  "deviceCreatedSuccessfully": "Device created successfully!",
+  "failedToCreateDevice": "Failed to create device: {error}",
+  "@failedToCreateDevice": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "teamForEvent": "Team: {eventName}",
+  "@teamForEvent": {
+    "placeholders": {
+      "eventName": {
+        "type": "String"
+      }
+    }
+  },
+  "addStaffToEvent": "Add Staff to Event",
+  "noStaffAssignedToEvent": "No staff assigned to this event.",
+  "unknownUser": "Unknown User",
+  "user": "User",
+  "standardShort": "STANDARD",
+  "invitationShort": "INVIT",
+  "vipShort": "VIP",
+  "selectUser": "Select User",
+  "roleInEvent": "Role in Event",
+  "addAction": "Add",
+  "editQuotasFor": "Edit Quotas: {userName}",
+  "@editQuotasFor": {
+    "placeholders": {
+      "userName": {
+        "type": "String"
+      }
+    }
+  },
+  "standardTicketQuota": "Standard Ticket Quota",
+  "guestListQuotaVip": "Guest List Quota (VIP)",
+  "invitationQuotaNormal": "Invitation Quota (Normal)",
+  "manualUpper": "MANUAL",
+  "systemUser": "System",
+  "activityByLine": "{buyer} • by {validator}",
+  "@activityByLine": {
+    "placeholders": {
+      "buyer": {
+        "type": "String"
+      },
+      "validator": {
+        "type": "String"
+      }
+    }
+  },
+  "sentByLine": "Sent by: {sender}",
+  "@sentByLine": {
+    "placeholders": {
+      "sender": {
+        "type": "String"
+      }
+    }
+  },
+  "statusLabel": "Status",
+  "share": "Share",
+  "sharedTicketMessage": "Shared ticket\n{link}\n\nID: {id}",
+  "@sharedTicketMessage": {
+    "placeholders": {
+      "link": {
+        "type": "String"
+      },
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "errorWithDetail": "Error: {error}",
+  "@errorWithDetail": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "manualSearchTitle": "MANUAL SEARCH",
+  "manualSearchDescription": "Select the search type and enter data to validate entry.",
+  "searchByLabel": "SEARCH BY",
+  "searchByDocument": "DOCUMENT (ID)",
+  "searchByPhone": "PHONE",
+  "documentNumberLabel": "DOCUMENT NUMBER",
+  "phoneNumberLabelUpper": "PHONE NUMBER",
+  "searchAttendee": "SEARCH ATTENDEE",
+  "resultsFoundCount": "{count} RESULTS FOUND:",
+  "@resultsFoundCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dniCiLabel": "ID:",
+  "phoneShortLabel": "PHONE:",
+  "validationReason": "VALIDATION REASON",
+  "qrNotReadable": "QR not readable",
+  "emailNotReceived": "Email not received",
+  "manualValidation": "Manual Validation",
+  "otherManualValidation": "Other / Manual Validation",
+  "confirmAndValidate": "CONFIRM AND VALIDATE",
+  "ticketAlreadyUsedInvalid": "THIS TICKET WAS ALREADY USED OR IS NOT VALID",
+  "manualValidationAudited": "AUDITED MANUAL VALIDATION",
+  "noRecordFound": "No record found",
+  "eventCreatedSuccessfully": "Event created successfully!",
+  "ticketLoadedFromDeepLink": "Ticket loaded from deep link.",
+  "couldNotOpenSharedTicket": "Could not open the shared ticket.",
+  "professionalAccessStaff": "Professional Access (Staff)",
+  "createsStaffAccessTicket": "Creates 'Staff Access' ticket (Price: 0)",
+  "enableInvitationsNormal": "Enable Invitations (Normal)",
+  "createsInvitationTicketForQuotas": "Creates 'Invitation' ticket (Price: 0) - For RRPP Quotas",
+  "setValidUntilTimeOptional": "Set Valid Until Time (Optional)",
+  "validUntilTime": "Valid until: {time}",
+  "@validUntilTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "enableVipGuestList": "Enable VIP Guest List",
+  "createsVipGuestTicketForQuotas": "Creates 'Special Guest' ticket (Price: 0) - For VIP Quotas",
+  "eventNotFound": "Event not found.",
+  "eventSelectedFromDeepLink": "Event selected from deep link.",
+  "couldNotOpenSharedEvent": "Could not open the shared event.",
+  "selectColor": "Select Color",
+  "offlineTicketQueued": "Offline. Ticket queued for automatic sync.",
+  "ticketCreatedEmailFailed": "Ticket created, but email could not be sent.",
+  "ticketCreatedEmailError": "Ticket created, email failed: {error}",
+  "@ticketCreatedEmailError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:imagine_access/features/dashboard/data/dashboard_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:mocktail/mocktail.dart';
 
 // ─── Mocks ──────────────────────────────────────────────
 // Supabase's rpc() returns PostgrestFilterBuilder which is complex to mock.

@@ -3,6 +3,28 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts"
 import { corsHeaders } from "../_shared/cors.ts"
 
+const toHex = (bytes: Uint8Array) =>
+    Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('')
+
+const sha256Hex = async (value: string) => {
+    const encoded = new TextEncoder().encode(value)
+    const digest = await crypto.subtle.digest('SHA-256', encoded)
+    return toHex(new Uint8Array(digest))
+}
+
+const verifyDevicePin = async (device: Record<string, unknown>, pin: string) => {
+    const pinHash = typeof device.pin_hash === 'string' ? device.pin_hash : null
+    const pinSalt = typeof device.pin_salt === 'string' ? device.pin_salt : null
+
+    if (pinHash && pinSalt) {
+        const calculated = await sha256Hex(`${pinSalt}:${pin}`)
+        return calculated === pinHash
+    }
+
+    const legacyPin = typeof device.pin === 'string' ? device.pin : null
+    return !!legacyPin && legacyPin === pin
+}
+
 serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
@@ -16,15 +38,20 @@ serve(async (req) => {
 
         const { qr_token, event_slug, device_id, pin } = await req.json()
 
-        // 1. Validate Device (Simple PIN check for MVP)
-        // Ideally verify hash. For now assuming plain PIN passed or checked against DB hash.
+        if (!device_id || !pin) {
+            return new Response(JSON.stringify({ allowed: false, result: 'invalid_device', message: 'Credenciales de dispositivo incompletas' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        // 1. Validate Device + PIN (hash/legacy)
         const { data: device, error: deviceError } = await supabaseClient
             .from('devices')
             .select('*')
-            .eq('device_id', device_id)
+            .or(`device_id.eq.${device_id},id.eq.${device_id}`)
             .single()
 
-        if (deviceError || !device || !device.enabled) {
+        const pinValid = device ? await verifyDevicePin(device as Record<string, unknown>, String(pin)) : false
+
+        if (deviceError || !device || !device.enabled || !pinValid) {
             return new Response(JSON.stringify({ allowed: false, result: 'invalid_device', message: 'Dispositivo no autorizado' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
@@ -35,7 +62,10 @@ serve(async (req) => {
         }
 
         const payloadStr = atob(payloadB64)
-        const secret = Deno.env.get('QR_SECRET_KEY') ?? 'default_secret_change_me'
+        const secret = Deno.env.get('QR_SECRET_KEY')
+        if (!secret) {
+            throw new Error('QR_SECRET_KEY is not configured')
+        }
         const expectedSignature = createHmac('sha256', secret).update(payloadStr).digest('hex')
 
         if (signature !== expectedSignature) {

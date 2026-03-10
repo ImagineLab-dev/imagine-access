@@ -10,7 +10,7 @@ import '../presentation/create_event_screen.dart';
 import '../../auth/presentation/auth_controller.dart';
 import 'event_state.dart';
 
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
 class AdminEventList extends ConsumerWidget {
   final List<Map<String, dynamic>> events;
@@ -62,14 +62,21 @@ class AdminEventList extends ConsumerWidget {
                 title: Text(event['name']),
                 content: Text(l10n.whatToDo),
                 actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, 'select'),
-                    child: Text(l10n.selectForScanning),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, 'edit'),
-                    child: Text(l10n.editEvent.toUpperCase()),
-                  ),
+                  if (!isArchived)
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, 'select'),
+                      child: Text(l10n.selectForScanning),
+                    ),
+                  if (!isArchived)
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, 'edit'),
+                      child: Text(l10n.editEvent.toUpperCase()),
+                    ),
+                  if (isArchived)
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, 'restore'),
+                      child: const Text('RESTAURAR', style: TextStyle(color: Colors.green)),
+                    ),
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, 'delete'),
                     child: Text(l10n.delete.toUpperCase(),
@@ -92,6 +99,18 @@ class AdminEventList extends ConsumerWidget {
                       builder: (_) => CreateEventScreen(
                           eventId: event['id'], initialData: event)))
                   .then((_) => ref.invalidate(eventsProvider));
+            } else if (action == 'restore' && context.mounted) {
+               try {
+                  await ref
+                      .read(eventRepositoryProvider)
+                      .unarchiveEvent(event['id']);
+                  ref.invalidate(eventsProvider);
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('Error: $e')));
+                  }
+                }
             } else if (action == 'delete' && context.mounted) {
               final confirm = await showDialog<bool>(
                 context: context,
@@ -134,8 +153,8 @@ class AdminEventList extends ConsumerWidget {
                   height: 60,
                   decoration: BoxDecoration(
                       color: isActive
-                          ? AppTheme.accentGreen.withOpacity(0.1)
-                          : Colors.grey.withOpacity(0.1),
+                        ? AppTheme.accentGreen.withValues(alpha: 0.1)
+                        : Colors.grey.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                           color: isActive
@@ -212,7 +231,7 @@ class AdminEventList extends ConsumerWidget {
           background: Container(
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 20),
-            color: Colors.red.withOpacity(0.2),
+            color: Colors.red.withValues(alpha: 0.2),
             child: const Icon(Icons.delete, color: Colors.red),
           ),
           child: cardContent,

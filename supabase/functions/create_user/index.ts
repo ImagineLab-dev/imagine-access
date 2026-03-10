@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { corsHeaders } from "../_shared/cors.ts"
 
-serve(async (req) => {
+serve(async (req: Request) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
@@ -23,6 +23,19 @@ serve(async (req) => {
         )
         if (callerError || !caller) throw new Error('Unauthorized')
 
+        let callerRole = caller.app_metadata?.role
+        if (!callerRole) {
+            const { data: callerProfileRole } = await supabaseAdmin
+                .from('users_profile')
+                .select('role')
+                .eq('user_id', caller.id)
+                .single()
+            callerRole = callerProfileRole?.role
+        }
+        if (callerRole !== 'admin') {
+            throw new Error('Forbidden: Admin role required')
+        }
+
         // Get caller's organization_id
         let callerOrgId = caller.user_metadata?.organization_id
         if (!callerOrgId) {
@@ -36,38 +49,44 @@ serve(async (req) => {
         if (!callerOrgId) throw new Error('Caller has no organization assigned')
 
         // 3. Get Input
-        const { email, password, display_name, role } = await req.json()
+        const { email, display_name, role } = await req.json()
 
-        if (!email || !password) throw new Error("Email and Password are required")
+        if (!email) throw new Error("Email is required")
 
-        // 4. Create Auth User (Admin API)
+        // 4. Create Auth User (Admin API - Invite Flow)
         let userId;
 
-        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.createUser({
+        console.log(`Inviting user: ${email}`);
+        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
             email,
-            password,
-            email_confirm: true,
-            user_metadata: {
-                display_name,
-                organization_id: callerOrgId,  // <-- LINK TO CALLER'S ORG
-            },
-            app_metadata: { role: role || 'rrpp' }
-        })
+            {
+                data: {
+                    display_name,
+                    organization_id: callerOrgId,  // <-- LINK TO CALLER'S ORG
+                }
+            }
+        )
+
+        // Supabase invite doesn't take app_metadata directly during creation in v2 sometimes, 
+        // but we'll update it right after just in case, or rely on the profile sync trigger!
+        // Actually, our trigger 'on_profile_updated_sync_auth' will sync the profile role 
+        // to app_metadata automatically in Step 5 when we upsert the users_profile.
 
         if (userError) {
             if (userError.message.includes("already been registered")) {
                 console.log("User exists, fetching ID to update profile...")
-                const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers()
 
-                if (listError) throw listError
+                // Use org-scoped RPC instead of listing ALL users (security fix)
+                const { data: foundUserId, error: lookupError } = await supabaseAdmin.rpc(
+                    'get_user_id_by_email',
+                    { p_email: email }
+                )
 
-                const existingUser = users.find((u: any) => u.email === email)
-
-                if (!existingUser) {
-                    throw new Error("User reported as registered but not found in list.")
+                if (lookupError || !foundUserId) {
+                    throw new Error("User reported as registered but could not be resolved. Contact support.")
                 }
 
-                userId = existingUser.id
+                userId = foundUserId
             } else {
                 throw userError
             }
@@ -75,7 +94,22 @@ serve(async (req) => {
             userId = userData.user.id
         }
 
-        // 5. Create/Update Profile linked to caller's organization
+        // 5. Check if user profile already exists with a different organization
+        if (userId) {
+            const { data: existingProfile } = await supabaseAdmin
+                .from('users_profile')
+                .select('organization_id')
+                .eq('user_id', userId)
+                .maybeSingle()
+
+            if (existingProfile && existingProfile.organization_id && existingProfile.organization_id !== callerOrgId) {
+                // User exists and belongs to another org. Cannot steal!
+                // Technically it could be a global user, but let's prevent stealing.
+                throw new Error("El usuario ya se encuentra registrado y pertenece a otra organización.")
+            }
+        }
+
+        // 6. Create/Update Profile linked to caller's organization
         const { error: profileError } = await supabaseAdmin
             .from('users_profile')
             .upsert({

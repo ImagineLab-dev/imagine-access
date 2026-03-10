@@ -1,19 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/ui/glass_scaffold.dart';
-import '../../../core/ui/glass_card.dart';
-import '../../../core/theme/app_theme.dart';
-import '../../../core/constants/app_roles.dart';
-import '../data/settings_repository.dart';
-import '../../events/presentation/event_state.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 
-final eventStaffProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+import '../../../core/constants/app_roles.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/glass_card.dart';
+import '../../../core/ui/glass_scaffold.dart';
+import '../../events/presentation/event_state.dart';
+import '../data/settings_repository.dart';
+
+final eventStaffProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final selectedEvent = ref.watch(selectedEventProvider);
   if (selectedEvent == null) return [];
-  return ref
-      .watch(settingsRepositoryProvider)
-      .getEventStaff(selectedEvent['id']);
+  return ref.watch(settingsRepositoryProvider).getEventStaff(selectedEvent['id']);
 });
 
 class EventStaffScreen extends ConsumerWidget {
@@ -25,32 +24,30 @@ class EventStaffScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final staffAsync = ref.watch(eventStaffProvider);
-    final allUsersAsync = ref.watch(usersListProvider); // For the "Add" dialog
+    final allUsersAsync = ref.watch(usersListProvider);
+    final l10n = AppLocalizations.of(context)!;
 
     if (selectedEvent == null) {
-      return const Scaffold(body: Center(child: Text("No event selected")));
+      return Scaffold(body: Center(child: Text(l10n.pleaseSelectEvent)));
     }
 
     return GlassScaffold(
       appBar: AppBar(
-        title: Text('Team: ${selectedEvent['name']}'),
+        title: Text(l10n.teamForEvent(selectedEvent['name'])),
         actions: [
           IconButton(
             icon: const Icon(Icons.person_add),
-            onPressed: () =>
-                _showAddStaffDialog(context, ref, allUsersAsync.value ?? []),
-            tooltip: 'Add Staff to Event',
+            onPressed: () => _showAddStaffDialog(context, ref, allUsersAsync.value ?? []),
+            tooltip: l10n.addStaffToEvent,
           ),
         ],
       ),
       body: staffAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, s) => Center(child: Text('Error: $e')),
+        error: (e, s) => Center(child: Text('${l10n.error}: $e')),
         data: (staffList) {
           if (staffList.isEmpty) {
-            return Center(
-                child: Text('No staff assigned to this event.',
-                    style: theme.textTheme.bodyMedium));
+            return Center(child: Text(l10n.noStaffAssignedToEvent, style: theme.textTheme.bodyMedium));
           }
 
           return ListView.separated(
@@ -59,13 +56,13 @@ class EventStaffScreen extends ConsumerWidget {
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               final staff = staffList[index];
-              // We need to match staff['user_id'] with allUsers to get display_name if not in join
-              // The query in repo was simple select, so we might miss names.
-              // Let's try to find name from global list.
               final userDetails = allUsersAsync.value?.firstWhere(
-                      (u) => u['user_id'] == staff['user_id'],
-                      orElse: () =>
-                          {'display_name': 'Unknown User', 'email': '???'}) ??
+                        (u) => u['user_id'] == staff['user_id'],
+                        orElse: () => {
+                          'display_name': l10n.unknownUser,
+                          'email': l10n.unknown,
+                        },
+                      ) ??
                   {};
 
               final role = staff['role'];
@@ -81,7 +78,7 @@ class EventStaffScreen extends ConsumerWidget {
                     Row(
                       children: [
                         CircleAvatar(
-                          backgroundColor: _getRoleColor(role).withOpacity(0.2),
+                          backgroundColor: _getRoleColor(role).withValues(alpha: 0.2),
                           child: Icon(Icons.person, color: _getRoleColor(role)),
                         ),
                         const SizedBox(width: 16),
@@ -90,26 +87,32 @@ class EventStaffScreen extends ConsumerWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                userDetails['display_name'] ?? 'Unknown',
+                                userDetails['display_name'] ?? l10n.unknown,
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                   color: isDark ? Colors.white : Colors.black87,
                                 ),
                               ),
-                              Text(role.toString().toUpperCase(),
-                                  style: TextStyle(
-                                      color: _getRoleColor(role),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold)),
+                              Text(
+                                role.toString().toUpperCase(),
+                                style: TextStyle(
+                                  color: _getRoleColor(role),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                         IconButton(
-                          icon:
-                              const Icon(Icons.edit, color: Colors.blueAccent),
-                          onPressed: () => _showEditQuotaDialog(context, ref,
-                              staff, userDetails['display_name'] ?? 'User'),
+                          icon: const Icon(Icons.edit, color: Colors.blueAccent),
+                          onPressed: () => _showEditQuotaDialog(
+                            context,
+                            ref,
+                            staff,
+                            userDetails['display_name'] ?? l10n.user,
+                          ),
                         ),
                       ],
                     ),
@@ -118,20 +121,23 @@ class EventStaffScreen extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         _QuotaBadge(
-                            title: "STANDARD",
-                            used: qStandardUsed,
-                            total: qStandard,
-                            color: Colors.blue),
+                          title: l10n.standardShort,
+                          used: qStandardUsed,
+                          total: qStandard,
+                          color: Colors.blue,
+                        ),
                         _QuotaBadge(
-                            title: "INVIT",
-                            used: staff['quota_invitation_used'] ?? 0,
-                            total: staff['quota_invitation'] ?? 0,
-                            color: Colors.purple),
+                          title: l10n.invitationShort,
+                          used: staff['quota_invitation_used'] ?? 0,
+                          total: staff['quota_invitation'] ?? 0,
+                          color: Colors.purple,
+                        ),
                         _QuotaBadge(
-                            title: "VIP",
-                            used: qGuestUsed,
-                            total: qGuest,
-                            color: Colors.pink),
+                          title: l10n.vipShort,
+                          used: qGuestUsed,
+                          total: qGuest,
+                          color: Colors.pink,
+                        ),
                       ],
                     )
                   ],
@@ -157,15 +163,10 @@ class EventStaffScreen extends ConsumerWidget {
     }
   }
 
-  void _showAddStaffDialog(BuildContext context, WidgetRef ref,
-      List<Map<String, dynamic>> allUsers) {
+  void _showAddStaffDialog(BuildContext context, WidgetRef ref, List<Map<String, dynamic>> allUsers) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    // Filter out users already in the list?
-    // Ideally yes, but let's just show all for MVP simplicity or filter via `eventStaffProvider` value if possible.
-    // We can't easily access the provider value here without passing it.
-    // Let's just user simple dropdown.
+    final l10n = AppLocalizations.of(context)!;
 
     String? selectedUserId;
     String selectedRole = AppRoles.rrpp;
@@ -175,13 +176,15 @@ class EventStaffScreen extends ConsumerWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           backgroundColor: isDark ? AppTheme.surfaceColor : Colors.white,
-          title: Text("Add Staff to Event",
-              style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+          title: Text(
+            l10n.addStaffToEvent,
+            style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: "Select User"),
+                decoration: InputDecoration(labelText: l10n.selectUser),
                 items: allUsers
                     .map((u) => DropdownMenuItem(
                           value: u['user_id'] as String,
@@ -192,36 +195,25 @@ class EventStaffScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: selectedRole,
-                decoration: const InputDecoration(labelText: "Role in Event"),
+                initialValue: selectedRole,
+                decoration: InputDecoration(labelText: l10n.roleInEvent),
                 items: [
-                  DropdownMenuItem(
-                      value: AppRoles.rrpp,
-                      child: Text(AppRoles.label(AppRoles.rrpp))),
-                  DropdownMenuItem(
-                      value: AppRoles.door,
-                      child: Text(AppRoles.label(AppRoles.door))),
-                  DropdownMenuItem(
-                      value: AppRoles.admin,
-                      child: Text(AppRoles.label(AppRoles.admin))),
+                  DropdownMenuItem(value: AppRoles.rrpp, child: Text(AppRoles.label(AppRoles.rrpp))),
+                  DropdownMenuItem(value: AppRoles.door, child: Text(AppRoles.label(AppRoles.door))),
+                  DropdownMenuItem(value: AppRoles.admin, child: Text(AppRoles.label(AppRoles.admin))),
                 ],
                 onChanged: (v) => setState(() => selectedRole = v!),
               ),
             ],
           ),
           actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text("Cancel")),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
             ElevatedButton(
               onPressed: selectedUserId == null
                   ? null
                   : () async {
-                      // Initial quotas 0, can edit later.
                       final eventId = ref.read(selectedEventProvider)!['id'];
-                      await ref
-                          .read(settingsRepositoryProvider)
-                          .manageEventStaff(
+                      await ref.read(settingsRepositoryProvider).manageEventStaff(
                             eventId: eventId,
                             userId: selectedUserId!,
                             role: selectedRole,
@@ -232,7 +224,7 @@ class EventStaffScreen extends ConsumerWidget {
                       ref.invalidate(eventStaffProvider);
                       if (context.mounted) Navigator.pop(ctx);
                     },
-              child: const Text("Add"),
+              child: Text(l10n.addAction),
             )
           ],
         ),
@@ -240,54 +232,55 @@ class EventStaffScreen extends ConsumerWidget {
     );
   }
 
-  void _showEditQuotaDialog(BuildContext context, WidgetRef ref,
-      Map<String, dynamic> staff, String userName) {
+  void _showEditQuotaDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> staff,
+    String userName,
+  ) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final stdCtrl =
-        TextEditingController(text: (staff['quota_standard'] ?? 0).toString());
-    final guestCtrl =
-        TextEditingController(text: (staff['quota_guest'] ?? 0).toString());
-    final invCtrl = TextEditingController(
-        text: (staff['quota_invitation'] ?? 0).toString());
+    final l10n = AppLocalizations.of(context)!;
+
+    final stdCtrl = TextEditingController(text: (staff['quota_standard'] ?? 0).toString());
+    final guestCtrl = TextEditingController(text: (staff['quota_guest'] ?? 0).toString());
+    final invCtrl = TextEditingController(text: (staff['quota_invitation'] ?? 0).toString());
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: isDark ? AppTheme.surfaceColor : Colors.white,
-        title: Text("Edit Quotas: $userName",
-            style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+        title: Text(
+          l10n.editQuotasFor(userName),
+          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: stdCtrl,
               keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: "Standard Ticket Quota"),
+              decoration: InputDecoration(labelText: l10n.standardTicketQuota),
               style: TextStyle(color: isDark ? Colors.white : Colors.black),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: guestCtrl,
               keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: "Guest List Quota (VIP)"),
+              decoration: InputDecoration(labelText: l10n.guestListQuotaVip),
               style: TextStyle(color: isDark ? Colors.white : Colors.black),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: invCtrl,
               keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: "Invitation Quota (Normal)"),
+              decoration: InputDecoration(labelText: l10n.invitationQuotaNormal),
               style: TextStyle(color: isDark ? Colors.white : Colors.black),
             )
           ],
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
           ElevatedButton(
             onPressed: () async {
               final std = int.tryParse(stdCtrl.text) ?? 0;
@@ -306,7 +299,7 @@ class EventStaffScreen extends ConsumerWidget {
               ref.invalidate(eventStaffProvider);
               if (context.mounted) Navigator.pop(ctx);
             },
-            child: const Text("Save"),
+            child: Text(l10n.save),
           )
         ],
       ),
@@ -320,31 +313,31 @@ class _QuotaBadge extends StatelessWidget {
   final int total;
   final Color color;
 
-  const _QuotaBadge(
-      {required this.title,
-      required this.used,
-      required this.total,
-      required this.color});
+  const _QuotaBadge({
+    required this.title,
+    required this.used,
+    required this.total,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(title,
-            style: TextStyle(
-                color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+        Text(
+          title,
+          style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+        ),
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.5)),
+            border: Border.all(color: color.withValues(alpha: 0.5)),
           ),
           child: Text(
-            "$used / ${total == 0 ? '∞' : total}", // If 0, maybe infinity? No, DB constraints check <=0? No check is <= quota. So 0 is 0.
-            // Wait, if quota is 0, they can sell 0.
-            // Admin usually sets 0 as none.
+            '$used / ${total == 0 ? '∞' : total}',
             style: TextStyle(color: color, fontWeight: FontWeight.bold),
           ),
         )

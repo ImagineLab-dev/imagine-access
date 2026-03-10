@@ -104,7 +104,9 @@ CREATE TABLE IF NOT EXISTS public.event_staff (
 CREATE TABLE IF NOT EXISTS public.devices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     device_id TEXT, -- For legacy support or explicit ID
-    pin TEXT NOT NULL,
+  pin TEXT,
+  pin_hash TEXT,
+  pin_salt TEXT,
     alias TEXT,
     enabled BOOLEAN DEFAULT true,
     last_active_at TIMESTAMPTZ,
@@ -116,6 +118,9 @@ DO $$
 BEGIN
     BEGIN ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS device_id TEXT; EXCEPTION WHEN OTHERS THEN NULL; END;
     BEGIN ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS pin TEXT; EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS pin_hash TEXT; EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS pin_salt TEXT; EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ALTER TABLE public.devices ALTER COLUMN pin DROP NOT NULL; EXCEPTION WHEN OTHERS THEN NULL; END;
     BEGIN ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS alias TEXT; EXCEPTION WHEN OTHERS THEN NULL; END;
     BEGIN ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT true; EXCEPTION WHEN OTHERS THEN NULL; END;
 END $$;
@@ -328,22 +333,87 @@ CREATE OR REPLACE FUNCTION public.search_tickets_unified(
 )
 RETURNS jsonb AS $$
 DECLARE
+  v_uid uuid;
   v_is_authenticated boolean := false;
+  v_device_org_id uuid;
   v_results jsonb;
+  v_event_org_id uuid;
+  v_user_org_id uuid;
 BEGIN
-  -- Authenticate: Check for User Session OR Valid Device
-  -- Authenticate: Check for User Session OR Valid Device
-  -- NOTE: We use 'device_id' (TEXT) which is the unique string ID, not 'id' (UUID)
-  IF auth.uid() IS NOT NULL OR EXISTS (SELECT 1 FROM public.devices d WHERE d.device_id = p_device_id AND d.pin = p_device_pin AND d.enabled = true) THEN
+  -- 1. Determinar Identidad
+  v_uid := auth.uid();
+
+  -- A. Usuario Logueado
+  IF v_uid IS NOT NULL THEN
     v_is_authenticated := true;
-  END IF;
-  
-  -- Return empty if not authenticated
-  IF v_is_authenticated IS NOT true THEN 
-    RETURN '[]'::jsonb; 
+  ELSE
+    -- B. Dispositivo (PIN)
+    IF p_device_id IS NOT NULL AND p_device_pin IS NOT NULL THEN
+      SELECT d.organization_id
+      INTO v_device_org_id
+      FROM public.devices d
+      WHERE d.enabled = true
+        AND (
+          cast(d.id as text) = p_device_id
+          OR (
+            EXISTS (
+              SELECT 1
+              FROM information_schema.columns
+              WHERE table_schema = 'public'
+                AND table_name = 'devices'
+                AND column_name = 'device_id'
+            )
+            AND d.device_id = p_device_id
+          )
+        )
+        AND (
+          (
+            d.pin_hash IS NOT NULL
+            AND d.pin_salt IS NOT NULL
+            AND d.pin_hash = encode(digest(d.pin_salt || ':' || p_device_pin, 'sha256'), 'hex')
+          )
+          OR (d.pin_hash IS NULL AND d.pin = p_device_pin)
+        )
+      LIMIT 1;
+
+      IF v_device_org_id IS NOT NULL THEN
+        v_is_authenticated := true;
+      END IF;
+    END IF;
   END IF;
 
-  -- Search Logic
+  -- 2. Validar Acceso
+  IF v_is_authenticated IS NOT true THEN 
+    RETURN jsonb_build_object('error', 'Unauthorized: No valid session or device credentials');
+  END IF;
+
+  -- 2b. Validar tipo de búsqueda
+  IF p_type NOT IN ('doc', 'phone') THEN
+    RETURN jsonb_build_object('error', 'Invalid search type. Use doc or phone');
+  END IF;
+
+  -- 2c. Guard multitenant por evento (JWT o dispositivo)
+  SELECT e.organization_id INTO v_event_org_id
+  FROM public.events e
+  WHERE e.id = p_event_id;
+
+  IF NOT FOUND THEN
+    RETURN '[]'::jsonb;
+  END IF;
+
+  IF v_uid IS NOT NULL THEN
+    SELECT up.organization_id INTO v_user_org_id
+    FROM public.users_profile up
+    WHERE up.user_id = v_uid;
+
+    IF v_event_org_id IS NOT NULL AND v_user_org_id IS DISTINCT FROM v_event_org_id THEN
+      RETURN jsonb_build_object('error', 'Forbidden: event outside your organization');
+    END IF;
+  ELSIF v_device_org_id IS DISTINCT FROM v_event_org_id THEN
+    RETURN jsonb_build_object('error', 'Forbidden: event outside your organization');
+  END IF;
+
+  -- 3. Search Logic
   IF p_type = 'doc' THEN
     SELECT jsonb_agg(
       jsonb_build_object(
@@ -394,7 +464,8 @@ BEGIN
 
   RETURN COALESCE(v_results, '[]'::jsonb);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp;
 
 -- STATS RPC (Graphs)
 CREATE OR REPLACE FUNCTION public.get_event_statistics(p_event_id uuid)
@@ -413,36 +484,44 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- DEVICE RPC (Smart Auth)
 CREATE OR REPLACE FUNCTION public.get_device_tickets(
     p_device_id text,
-    p_device_pin text
+    p_device_pin text,
+    p_event_id uuid DEFAULT NULL
 )
 RETURNS jsonb AS $$
 DECLARE
   v_is_authenticated boolean := false;
-  v_result jsonb;
-  v_sql text;
-  v_count int;
+  v_result jsonb := '[]'::jsonb;
+  v_device_org_id uuid;
 BEGIN
-  -- 1. Dynamic Authentication
-  -- We build a query that checks 'id::text' AND 'device_id' (if it exists)
-  -- This handles both UUIDs and Friendly IDs without throwing errors.
-  
-  v_sql := 'SELECT count(*) FROM public.devices WHERE enabled = true AND pin = $1 AND (cast(id as text) = $2';
-  
-  -- Check if 'device_id' column exists to include it in the OR condition
-  IF EXISTS (
-      SELECT 1 FROM information_schema.columns 
-      WHERE table_name = 'devices' AND column_name = 'device_id'
-  ) THEN
-      v_sql := v_sql || ' OR device_id = $2';
-  END IF;
-  
-  v_sql := v_sql || ')';
-  
-  -- Execute the dynamic query
-  EXECUTE v_sql INTO v_count USING p_device_pin, p_device_id;
-  
-  IF v_count > 0 THEN
-      v_is_authenticated := true;
+  SELECT d.organization_id
+    INTO v_device_org_id
+  FROM public.devices d
+  WHERE d.enabled = true
+    AND (
+      cast(d.id as text) = p_device_id
+      OR (
+        EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'devices'
+            AND column_name = 'device_id'
+        )
+        AND d.device_id = p_device_id
+      )
+    )
+    AND (
+      (
+        d.pin_hash IS NOT NULL
+        AND d.pin_salt IS NOT NULL
+        AND d.pin_hash = encode(digest(d.pin_salt || ':' || p_device_pin, 'sha256'), 'hex')
+      )
+      OR (d.pin_hash IS NULL AND d.pin = p_device_pin)
+    )
+  LIMIT 1;
+
+  IF v_device_org_id IS NOT NULL THEN
+    v_is_authenticated := true;
   END IF;
 
   -- 2. Return Empty if Auth Fails
@@ -450,27 +529,33 @@ BEGIN
     RETURN '[]'::jsonb;
   END IF;
 
-  -- 3. Fetch Tickets (All tickets)
-  SELECT jsonb_agg(
-    to_jsonb(t) || 
-    jsonb_build_object(
-      'events', jsonb_build_object('name', e.name),
-      'users_profile', CASE WHEN up.user_id IS NOT NULL THEN jsonb_build_object('display_name', up.display_name) ELSE null END,
-      'checkins', COALESCE((
-          SELECT jsonb_agg(jsonb_build_object('id', c.id))
-          FROM public.checkins c
-          WHERE c.ticket_id = t.id
-      ), '[]'::jsonb)
-    )
-  ) INTO v_result
-  FROM public.tickets t
-  LEFT JOIN public.events e ON t.event_id = e.id
-  LEFT JOIN public.users_profile up ON t.created_by = up.user_id
-  ORDER BY t.created_at DESC;
+  -- 3. Fetch Tickets (scoped to device org and optional event)
+  SELECT COALESCE(jsonb_agg(x.ticket_json), '[]'::jsonb)
+  INTO v_result
+  FROM (
+    SELECT
+      to_jsonb(t) || 
+      jsonb_build_object(
+        'events', jsonb_build_object('name', e.name),
+        'users_profile', CASE WHEN up.user_id IS NOT NULL THEN jsonb_build_object('display_name', up.display_name) ELSE null END,
+        'checkins', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object('id', c.id))
+            FROM public.checkins c
+            WHERE c.ticket_id = t.id
+        ), '[]'::jsonb)
+      ) AS ticket_json
+    FROM public.tickets t
+    LEFT JOIN public.events e ON t.event_id = e.id
+    LEFT JOIN public.users_profile up ON t.created_by = up.user_id
+    WHERE e.organization_id = v_device_org_id
+      AND (p_event_id IS NULL OR t.event_id = p_event_id)
+    ORDER BY t.created_at DESC
+  ) x;
 
-  RETURN COALESCE(v_result, '[]'::jsonb);
+  RETURN v_result;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp;
 
 
 -- ROBUST TICKET FETCHING (Bypasses RLS complexity)

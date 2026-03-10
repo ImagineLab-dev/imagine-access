@@ -15,16 +15,47 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
+        const authHeader = req.headers.get('Authorization')
+        if (!authHeader) throw new Error('No authorization header')
+
+        const bearer = authHeader.replace('Bearer ', '').trim()
+        const {
+            data: { user: caller },
+            error: callerError,
+        } = await supabaseAdmin.auth.getUser(bearer)
+        if (callerError || !caller) throw new Error('Unauthorized')
+
         // 2. Get Data Body
         const { user_id, display_name, email, organization_name } = await req.json()
 
-        if (!user_id) throw new Error("Missing user_id")
+        const requestedUserId = typeof user_id === 'string' && user_id.trim().length > 0
+            ? user_id.trim()
+            : caller.id
+
+        if (requestedUserId !== caller.id) {
+            const { data: callerProfile } = await supabaseAdmin
+                .from('users_profile')
+                .select('role')
+                .eq('user_id', caller.id)
+                .single()
+
+            const callerRole = caller.app_metadata?.role ?? callerProfile?.role
+            if (callerRole !== 'admin') {
+                throw new Error('Forbidden: cannot manage profile for another user')
+            }
+        }
+
+        const effectiveEmail = (typeof email === 'string' && email.trim().length > 0)
+            ? email.trim()
+            : (caller.email ?? '')
+
+        if (!requestedUserId) throw new Error("Missing user_id")
 
         // 3. Check if user already has a profile with organization
-        const { data: existingProfile, error: checkError } = await supabaseAdmin
+        const { data: existingProfile } = await supabaseAdmin
             .from('users_profile')
             .select('id, organization_id')
-            .eq('user_id', user_id)
+            .eq('user_id', requestedUserId)
             .single()
 
         if (existingProfile?.organization_id) {
@@ -47,13 +78,13 @@ serve(async (req) => {
         }
 
         // 4. Generate unique organization slug
-        const baseSlug = (display_name || email?.split('@')[0] || 'org')
+        const baseSlug = (display_name || effectiveEmail.split('@')[0] || 'org')
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '')
         const uniqueSlug = `${baseSlug}-${Math.random().toString(36).substring(2, 8)}`
 
-        const orgName = organization_name || `${display_name || email?.split('@')[0] || 'My'} Organization`
+        const orgName = organization_name || `${display_name || effectiveEmail.split('@')[0] || 'My'} Organization`
 
         // 5. Create Organization first
         const { data: org, error: orgError } = await supabaseAdmin
@@ -61,7 +92,7 @@ serve(async (req) => {
             .insert({
                 name: orgName,
                 slug: uniqueSlug,
-                owner_id: user_id,
+                owner_id: requestedUserId,
             })
             .select()
             .single()
@@ -75,8 +106,8 @@ serve(async (req) => {
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('users_profile')
             .upsert({
-                user_id: user_id,
-                display_name: display_name || email?.split('@')[0] || 'User',
+                user_id: requestedUserId,
+                display_name: display_name || effectiveEmail.split('@')[0] || 'User',
                 role: 'admin', // Owner is admin of their organization
                 organization_id: org.id,
                 created_at: new Date().toISOString()
@@ -91,7 +122,7 @@ serve(async (req) => {
 
         // 7. Update auth.users metadata with organization info
         const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-            user_id,
+            requestedUserId,
             {
                 app_metadata: {
                     role: 'admin',

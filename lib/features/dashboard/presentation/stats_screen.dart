@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import '../../../core/ui/glass_scaffold.dart';
 import '../../../core/ui/glass_card.dart';
 import '../../../core/theme/app_theme.dart';
@@ -26,7 +26,7 @@ class StatsScreen extends ConsumerWidget {
       ),
       body: statsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text("Error: $err")),
+        error: (err, _) => Center(child: Text('${l10n.error}: $err')),
         data: (stats) {
           final attendance = stats['attendance_by_hour'] as List? ?? [];
           final rrpp = stats['rrpp_performance'] as List? ?? [];
@@ -194,7 +194,7 @@ class StatsScreen extends ConsumerWidget {
               dotData: const FlDotData(show: true),
               belowBarData: BarAreaData(
                 show: true,
-                color: AppTheme.accentPurple.withOpacity(0.1),
+                color: AppTheme.accentPurple.withValues(alpha: 0.1),
               ),
             ),
           ],
@@ -235,9 +235,9 @@ class _Badge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.5)),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
         text,

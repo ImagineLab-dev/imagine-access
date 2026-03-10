@@ -24,6 +24,27 @@ serve(async (req) => {
             })
         }
 
+        const { data: profile, error: profileError } = await supabase
+            .from('users_profile')
+            .select('organization_id, role')
+            .eq('user_id', user.id)
+            .single()
+
+        if (profileError || !profile?.organization_id) {
+            return new Response(JSON.stringify({ error: 'User organization not found' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 400,
+            })
+        }
+
+        const userRole = profile.role ?? user.app_metadata?.role ?? user.user_metadata?.role ?? 'rrpp'
+        if (userRole !== 'admin') {
+            return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 403,
+            })
+        }
+
         const { name, date, venue } = await req.json()
 
         if (!name || !date || !venue) {
@@ -62,6 +83,7 @@ serve(async (req) => {
                     slug: finalSlug,
                     date,
                     venue,
+                    organization_id: profile.organization_id,
                     created_by: user.id
                 },
             ])

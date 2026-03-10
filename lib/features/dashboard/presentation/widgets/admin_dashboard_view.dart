@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:imagine_access/l10n/app_localizations.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_helper.dart';
@@ -111,19 +111,27 @@ class AdminDashboardView extends ConsumerWidget {
             ActionItem(l10n.viewAllTickets, Icons.list_alt, '/tickets',
                 color: Colors.orangeAccent),
           ],
-          onActionBeforeNavigate: () => _checkEventSelected(context, ref),
+          onActionBeforeNavigate: (action) =>
+              _checkEventSelected(context, ref, action.route),
         ),
       ],
     );
   }
 
-  void _checkEventSelected(BuildContext context, WidgetRef ref) {
+  bool _checkEventSelected(BuildContext context, WidgetRef ref, String route) {
+    if (route == '/tickets') {
+      return true;
+    }
+
     final selectedEvent = ref.read(selectedEventProvider);
     if (selectedEvent == null) {
       final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.pleaseSelectEvent)),
       );
+      return false;
     }
+
+    return true;
   }
 }
